@@ -12,8 +12,8 @@ uv remove <package>                # Remove a dependency
 
 Always commit `pyproject.toml` and `uv.lock` together. Never edit or hand-merge
 `uv.lock`; resolve dependency intent in `pyproject.toml`, then run `uv lock`.
-Experiment branches may use different versions, but only shared dependencies
-should be merged into `main`.
+Experiment branches may use different versions. Keep experiment-specific
+dependency changes on their branch.
 
 The `.gitattributes` rule does not block normal `uv.lock` updates. It creates a
 conflict only when both branches changed the lockfile; resolve `pyproject.toml`
