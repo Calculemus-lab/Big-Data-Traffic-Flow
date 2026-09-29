@@ -13,6 +13,11 @@ Maximize score over the next 3-4 weeks, prioritizing:
 
 ## Working model
 
+### Python environment
+
+Use `uv sync --locked` after checkout and `uv run` to execute code. See the
+brief [dependency guide](docs/dependencies.md) before changing packages.
+
 ### General coding practices
 
 - **1 branch ↔ 1 experiment**
