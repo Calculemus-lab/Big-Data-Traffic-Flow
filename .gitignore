@@ -77,6 +77,10 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
+
+# Experiment scratch space at any depth
+temp/
 
 # IPython
 profile_default/

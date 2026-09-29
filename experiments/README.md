@@ -7,6 +7,10 @@ This folder holds the shared experiment log and experiment-level artifacts refer
 - Add one row per experiment run to `experiment_log.csv`.
 - Log all runs, including failed experiments and dead ends.
 - Keep branch naming aligned with the `1 branch ↔ 1 experiment` rule.
+- Store durable outputs in `results/` on the experiment branch and use those
+  paths in the log. Put disposable intermediates in an ignored `temp/` folder.
+- Use the fold configuration in [`config/cv_scheme.yaml`](../config/cv_scheme.yaml)
+  for every run.
 
 ## Required fields
 
