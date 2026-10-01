@@ -1,8 +1,8 @@
 name: shared_cv_v1
 objective: "maximize_cv_first"
-random_seed: 42
-folds: 5
-splitter: "kfold"
+random_seed: 69420
+folds: * to be filled in *
+splitter: * to be filled in *
 shuffle: true
 notes:
   - "All experiments must use this shared CV setup unless the team explicitly agrees to a new version."
