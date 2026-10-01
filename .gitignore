@@ -1,3 +1,8 @@
+# release directory containing data and sample submissions (https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/data) 
+**/kaggle_public/ 
+
+**/.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
