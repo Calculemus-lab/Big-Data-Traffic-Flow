@@ -1,0 +1,3 @@
+[submodule "official_competition_repo"]
+	path = official_competition_repo
+	url = https://github.com/jacky850/trafficflowbench-public.git

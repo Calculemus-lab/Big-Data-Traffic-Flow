@@ -10,6 +10,7 @@ from pathlib import PurePosixPath
 BRANCH_PATTERN = re.compile(r"cycle-[0-9]+/CAL-[0-9]+/[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 # The existing repository setup branch predates the experiment convention.
 LEGACY_BRANCHES = {"CAL-7/setup-repo"}
+SUBMODULE_ROOTS = {"official_competition_repo"}
 ARTIFACT_SUFFIXES = {
     ".csv", ".tsv", ".parquet", ".feather", ".arrow",
     ".png", ".jpg", ".jpeg", ".svg", ".pdf", ".html",
@@ -28,6 +29,8 @@ def main() -> int:
     tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
     for name in filter(None, tracked):
         path = PurePosixPath(name)
+        if path.parts[0] in SUBMODULE_ROOTS:
+            continue
         if "temp" in path.parts[:-1]:
             errors.append(f"tracked temporary file: {name}")
         if path.suffix.lower() == ".ipynb":
