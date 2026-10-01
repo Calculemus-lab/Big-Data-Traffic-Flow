@@ -18,6 +18,8 @@ ARTIFACT_SUFFIXES = {
     ".h5", ".hdf5", ".onnx", ".safetensors",
 }
 ARTIFACT_EXCEPTIONS = {"experiments/experiment_log.csv"}
+DOCUMENTATION_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".svg"}
+IMAGE_ARTIFACT_EXEMPT_DIRECTORIES = {"docs"}
 
 
 def main() -> int:
@@ -39,6 +41,10 @@ def main() -> int:
             path.suffix.lower() in ARTIFACT_SUFFIXES
             and name not in ARTIFACT_EXCEPTIONS
             and path.parts[0] != "results"
+            and not (
+                path.parts[0] in IMAGE_ARTIFACT_EXEMPT_DIRECTORIES
+                and path.suffix.lower() in DOCUMENTATION_IMAGE_SUFFIXES
+            )
         ):
             errors.append(f"experiment artifact must be under results/: {name}")
 
