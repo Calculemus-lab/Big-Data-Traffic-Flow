@@ -1,23 +1,28 @@
-# Big-Data-Traffic-Flow
+# Traffic Flow Bench team experiments
 
-Shared repository for experiments in the Kaggle **2026 IEEE Big Data Traffic Flow Bench** competition.
+Team experiment code for the 2026 IEEE Big Data Traffic Flow Bench.
 
-Competition: https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview
+- [Getting started and using `bench`](docs/GETTING_STARTED.md)
+- [CI and private data setup](docs/CI_SETUP.md)
+- [Competition reference](docs/COMPETITION.md)
+- [Experiment records](docs/EXPERIMENTS.md)
+
+The checked-in [public benchmark reference](trafficflowbench-public/README.md)
+contains the organizer's schemas, scorers, and baseline documentation.
 
 The goal is to maximize local cross-validation score first, then public
 leaderboard score.
 
-### Project guides:    
-- [competition and theory](docs/competition_and_theory.md)
-- [data](docs/data.md)  
-- [submission](docs/submit.md)
-- [workflow and branch conventions](docs/workflow.md)    
-- [Python dependencies](docs/dependencies.md)   
-- [experiment logging](experiments/README.md)     
-- [result artifacts](results/README.md)     
+Additional project guides cover:
 
+- [Competition and traffic theory](docs/competition_and_theory.md)
+- [Data download](docs/data.md)
+- [Submissions](docs/submit.md)
+- [Workflow and branch conventions](docs/workflow.md)
+- [Python dependencies](docs/dependencies.md)
+- [Result artifacts](results/README.md)
 
-The official competition code, baselines, evaluators, and reference docs are
-pinned in [`official_competition_repo/`](official_competition_repo/). Initialize
-the submodule after a regular clone with `git submodule update --init --recursive`,
-or clone this repository with `--recurse-submodules`.
+The official competition repository is also pinned as a submodule in
+[`official_competition_repo/`](official_competition_repo/). Initialize it after
+cloning with `git submodule update --init --recursive`, or clone with
+`--recurse-submodules`.

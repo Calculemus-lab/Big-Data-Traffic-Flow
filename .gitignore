@@ -1,5 +1,5 @@
-# release directory containing data and sample submissions (https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/data) 
-**/kaggle_public/ 
+# release directory containing data and sample submissions (https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/data)
+**/kaggle_public/
 
 **/.zip
 
@@ -225,3 +225,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Competition data and generated experiment artifacts
+/data/
+/runs/
+/kaggle_public/
+*.zip
+*.kaggle-partial
+/init/

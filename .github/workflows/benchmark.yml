@@ -1,0 +1,144 @@
+name: Experiment benchmark
+on:
+  workflow_dispatch:
+    inputs:
+      solution:
+        description: Python filename in solutions, without .py
+        required: true
+        default: baseline
+      task:
+        type: choice
+        options: [state, queue, odme]
+        default: state
+      profile:
+        type: choice
+        options: [quick, full, holdout]
+        default: quick
+      params:
+        description: JSON parameters
+        default: '{}'
+permissions:
+  contents: read
+concurrency:
+  group: benchmark-${{ github.ref }}-${{ inputs.solution }}-${{ inputs.task }}-${{ inputs.profile }}
+  cancel-in-progress: false
+env:
+  DATA_REPO: ${{ vars.TRAFFICBENCH_DATA_REPO }}
+  DATA_RELEASE: ${{ vars.TRAFFICBENCH_DATA_RELEASE || 'benchmarks-v1' }}
+  PROFILE: ${{ inputs.profile }}
+  TASK: ${{ inputs.task }}
+  SOLUTION: ${{ inputs.solution }}
+  PARAMS: ${{ inputs.params }}
+  OMP_NUM_THREADS: '2'
+  OPENBLAS_NUM_THREADS: '2'
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download benchmark index from private data repository
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFICBENCH_DATA_TOKEN }}
+        run: |
+          test -n "$DATA_REPO" || { echo 'Set TRAFFICBENCH_DATA_REPO to the private data repository'; exit 1; }
+          test -n "$GH_TOKEN" || { echo 'Set the read-only TRAFFICBENCH_DATA_TOKEN secret'; exit 1; }
+          test "$(gh repo view "$DATA_REPO" --json visibility --jq .visibility)" = PRIVATE || { echo 'The benchmark data repository must be private'; exit 1; }
+          gh release download "$DATA_RELEASE" --repo "$DATA_REPO" --pattern "$PROFILE-index.json" --dir catalog
+      - id: matrix
+        name: Select panels for the requested task
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          index = json.loads(Path('catalog', os.environ['PROFILE'] + '-index.json').read_text())
+          matrix = {'include': [{k:s[k] for k in ['panel','asset','sha256']} for s in index['shards'] if os.environ['TASK'] in s['tasks']]}
+          if not matrix['include']:
+              raise SystemExit('No panels for this task')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('matrix=' + json.dumps(matrix) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-index
+          path: catalog/
+          retention-days: 7
+  benchmark:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      PANEL: ${{ matrix.panel }}
+      ASSET: ${{ matrix.asset }}
+      ASSET_SHA256: ${{ matrix.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: astral-sh/setup-uv@v9
+        with:
+          version: '0.12.5'
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Download only this panel's prepared data
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFICBENCH_DATA_TOKEN }}
+        run: gh release download "$DATA_RELEASE" --repo "$DATA_REPO" --pattern "$ASSET" --dir downloads
+      - name: Check and unpack the data
+        run: uv run --locked python -m trafficbench.ci unpack --archive "downloads/$ASSET" --output data/ci --sha256 "$ASSET_SHA256"
+      - name: Run experiment
+        run: uv run --locked bench run "$SOLUTION" --task "$TASK" --bundle data/ci --panel "$PANEL" --params "$PARAMS"
+      - name: Add reports to the job summary
+        if: always()
+        run: |
+          if [ -d runs ]; then
+            find runs -name report.md -exec cat {} \; >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Save compact results (predictions stay out of public artifacts)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: panel-${{ matrix.panel }}
+          path: |
+            runs/
+            !runs/**/predictions/**
+          if-no-files-found: ignore
+          retention-days: 1
+  report:
+    needs: [plan, benchmark]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: astral-sh/setup-uv@v9
+        with:
+          version: '0.12.5'
+          enable-cache: true
+      - run: uv sync --locked
+      - uses: actions/download-artifact@v4
+        with:
+          name: benchmark-index
+          path: catalog
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: panel-*
+          path: collected
+      - name: Combine all panels with the competition weighting
+        run: |
+          uv run --locked python -m trafficbench.ci combine --root collected --index "catalog/$PROFILE-index.json" --solution "$SOLUTION" --task "$TASK" --output runs/combined
+          cat runs/combined/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: combined-results
+          path: runs/combined/
+          retention-days: 7

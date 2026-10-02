@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+
+# Local data and results. The data package is distributed through Kaggle and is
+# never committed here.
+/data/
+/release/
+/reports/
+*.parquet
+submission*.csv
+*_submission.csv

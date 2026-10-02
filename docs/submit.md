@@ -1,6 +1,6 @@
 # Submit predictions
 
-Make sure you have joined the [Kaggle competition](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview). Follow [Build the complete submission](competition_and_theory.md#building-the-complete-submission) to create the merged `final_submission.csv` in the required format. 
+Make sure you have joined the [Kaggle competition](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview). Follow [Build the complete submission](competition_and_theory.md#building-the-complete-submission) to create the merged `final_submission.csv` in the required format.
 
 Either upload the file manually on the [Kaggle submission page](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/submit) or use the Kaggle CLI:
 

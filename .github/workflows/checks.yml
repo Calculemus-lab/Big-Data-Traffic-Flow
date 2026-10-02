@@ -1,0 +1,49 @@
+name: Checks
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: astral-sh/setup-uv@v9
+        with:
+          version: '0.12.5'
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --locked python -m pytest -q
+      - name: Exercise the teammate commands on synthetic data
+        run: |
+          uv run --locked bench fixture --output data/fixture
+          uv run --locked bench prepare --data data/fixture --output data/ci
+          uv run --locked bench new ci_example
+          uv run --locked bench run ci_example --task state --bundle data/ci
+          uv run --locked bench run baseline --task queue --bundle data/ci
+          uv run --locked bench run baseline --task odme --bundle data/ci
+          uv run --locked bench summary
+      - name: Add experiment reports to the job summary
+        if: always()
+        run: |
+          if [ -d runs ]; then
+            find runs -name report.md -exec cat {} \; >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-results
+          path: |
+            runs/
+            !runs/**/predictions/**
+          if-no-files-found: ignore
+          retention-days: 7

@@ -8,9 +8,10 @@ from pathlib import PurePosixPath
 
 
 BRANCH_PATTERN = re.compile(r"cycle-[0-9]+/CAL-[0-9]+/[a-z0-9]+(?:-[a-z0-9]+)*\Z")
-# The existing repository setup branch predates the experiment convention.
-LEGACY_BRANCHES = {"CAL-7/setup-repo"}
+# Existing setup branches predate the experiment convention.
+LEGACY_BRANCHES = {"CAL-7/setup-repo", "chore/setup-CV"}
 SUBMODULE_ROOTS = {"official_competition_repo"}
+REFERENCE_ROOTS = {"trafficflowbench-public"}
 ARTIFACT_SUFFIXES = {
     ".csv", ".tsv", ".parquet", ".feather", ".arrow",
     ".png", ".jpg", ".jpeg", ".svg", ".pdf", ".html",
@@ -41,6 +42,7 @@ def main() -> int:
             path.suffix.lower() in ARTIFACT_SUFFIXES
             and name not in ARTIFACT_EXCEPTIONS
             and path.parts[0] != "results"
+            and path.parts[0] not in REFERENCE_ROOTS
             and not (
                 path.parts[0] in IMAGE_ARTIFACT_EXEMPT_DIRECTORIES
                 and path.suffix.lower() in DOCUMENTATION_IMAGE_SUFFIXES
