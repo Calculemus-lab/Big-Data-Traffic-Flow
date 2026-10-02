@@ -30,6 +30,12 @@ def code_hash():
     return digest({str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files()})
 
 
+def solution_hash(name):
+    path = Path('solutions') / name
+    files = sorted(path.rglob('*.py')) if path.is_dir() else [path.with_suffix('.py')]
+    return digest({str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in files})
+
+
 def evaluator_hash():
     return digest({str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path('trafficbench').glob('*.py'))})
 
@@ -85,7 +91,7 @@ def run(solution, task='state', bundle='data/benchmarks/quick', params=None, run
                 'panels':sorted({c['panel'] for c in selected}),
                 'commit':git('rev-parse','HEAD'), 'branch':git('branch','--show-current'), 'dirty':bool(git('status','--porcelain')),
                 'code_hash':code_hash(), 'evaluator_hash':evaluator_hash(),
-                'baseline_hash':hashlib.sha256(Path('solutions/baseline.py').read_bytes()).hexdigest(),
+                'baseline_hash':solution_hash('baseline'),
                 'python':sys.version, 'platform':platform.platform(), 'dependencies':versions, 'warnings':manifest.get('warnings', [])}
     for p in code_files():
         destination = directory / 'source' / p
@@ -98,7 +104,7 @@ def run(solution, task='state', bundle='data/benchmarks/quick', params=None, run
         module = importlib.import_module(f'solutions.{solution}')
         predict = getattr(module, task, None)
         if not callable(predict):
-            raise ValueError(f'solutions/{solution}.py must define {task}(ctx)')
+            raise ValueError(f'solutions/{solution} must define {task}(ctx)')
         previous, train, cache, network = None, pd.DataFrame(), {}, {}
         for case in selected:
             group = case['panel'], case['fold']

@@ -1,6 +1,6 @@
 # 2026 IEEE Big Data Traffic Flow Bench: competition reference
 
-This file is the project’s single reference for the competition description, data contract, scoring, submission, and award process. It consolidates the competition material supplied to this repository on 2026-10-01 and was checked against the local [`trafficflowbench-public/`](trafficflowbench-public/) repository. The repository defines the public evaluators and schemas; the pasted competition page supplies award and deadline details that the repository does not document. For an exact Kaggle cutoff or a later rule change, check the [competition page](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview).
+This file is the project’s single reference for the competition description, data contract, scoring, submission, and award process. It consolidates the competition material supplied to this repository on 2026-10-01 and was checked against the local [`trafficflowbench-public/`](../trafficflowbench-public/) repository. The repository defines the public evaluators and schemas; the pasted competition page supplies award and deadline details that the repository does not document. For an exact Kaggle cutoff or a later rule change, check the [competition page](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview).
 
 ## At a glance
 
@@ -71,9 +71,9 @@ q_FD(k) = v_f*k             if k <= k_crit
 N(t+dt) - N(t) = dt*(q_in + q_on_ramp - q_out - q_off_ramp)
 ```
 
-`S_FD` checks the normalized gap between submitted and fundamental-diagram-consistent flow at the same density, in per-lane terms. `S_LWR` penalizes conservation residuals over five-minute steps and carries two thirds of the physics weight. The [scoring specification](trafficflowbench-public/docs/SCORING_SPEC.md) gives the exact normalization and safeguards.
+`S_FD` checks the normalized gap between submitted and fundamental-diagram-consistent flow at the same density, in per-lane terms. `S_LWR` penalizes conservation residuals over five-minute steps and carries two thirds of the physics weight. The [scoring specification](../trafficflowbench-public/docs/SCORING_SPEC.md) gives the exact normalization and safeguards.
 
-Ramp coverage fixes which transitions are checked. Mode A uses eligible on/off-ramp observations as anchors; Mode B scores transitions with valid attached-ramp observations and ramp-free mainline transitions, excluding attached-ramp transitions with invalid observations; Mode C checks only ramp-free mainline transitions. Organizers fix and publish each panel’s mode. All ten panels in this release are Mode A, with 0.756 ramp coverage; see [`config/task3_lwr_modes.json`](trafficflowbench-public/config/task3_lwr_modes.json).
+Ramp coverage fixes which transitions are checked. Mode A uses eligible on/off-ramp observations as anchors; Mode B scores transitions with valid attached-ramp observations and ramp-free mainline transitions, excluding attached-ramp transitions with invalid observations; Mode C checks only ramp-free mainline transitions. Organizers fix and publish each panel’s mode. All ten panels in this release are Mode A, with 0.756 ramp coverage; see [`config/task3_lwr_modes.json`](../trafficflowbench-public/config/task3_lwr_modes.json).
 
 **Local-score limitation:** Public `score_task3.py` lacks organizer boundary flows and substitutes an estimate from submitted flows. Its `S_LWR` can floor at zero even for a correct answer, so its printed physics score is not a reliable ranking signal. Train against locally scoreable Task 1 and use leaderboard feedback for Task 3. The competition material gives an illustrative `D12_I5_N` comparison of approximately 0.33 locally versus 0.96 with organizer flows for a perfect answer; exact figures may vary by evaluator version.
 
@@ -85,7 +85,7 @@ Let `A` be the released path-link incidence matrix and `f` the submitted path-fl
 S_ODME = 0.45*S_od + 0.25*S_link + 0.15*S_dev + 0.15*S_attr
 ```
 
-`S_od` compares submitted and withheld reference path flows; `S_link` compares `A*f` with released counts; `S_dev` compares distance from the weak prior with the reference’s distance from that prior; `S_attr` compares destination-attraction distributions. `S_dev` discourages both leaving the prior untouched and fitting counts with implausible demand. The [scoring specification](trafficflowbench-public/docs/SCORING_SPEC.md) contains the exact formulas. Submitted path IDs and origin/destination zones must match the released network files; link references belong to the released incidence asset, not the submission. Path flows must be finite and nonnegative. `departure_time` is a period token rather than a timestamp; the public release defines one period per split.
+`S_od` compares submitted and withheld reference path flows; `S_link` compares `A*f` with released counts; `S_dev` compares distance from the weak prior with the reference’s distance from that prior; `S_attr` compares destination-attraction distributions. `S_dev` discourages both leaving the prior untouched and fitting counts with implausible demand. The [scoring specification](../trafficflowbench-public/docs/SCORING_SPEC.md) contains the exact formulas. Submitted path IDs and origin/destination zones must match the released network files; link references belong to the released incidence asset, not the submission. Path flows must be finite and nonnegative. `departure_time` is a period token rather than a timestamp; the public release defines one period per split.
 
 ## Dataset and file layout
 
@@ -228,8 +228,8 @@ The challenge is organized by the [IEEE Intelligent Transportation Systems Socie
 
 - [Kaggle competition and rules](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview)
 - [Kaggle Data page](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/data)
-- [Public code, baselines, schemas, and scoring specification](https://github.com/jacky850/trafficflowbench-public), also checked out locally as [`trafficflowbench-public/`](trafficflowbench-public/)
+- [Public code, baselines, schemas, and scoring specification](https://github.com/jacky850/trafficflowbench-public), also checked out locally as [`trafficflowbench-public/`](../trafficflowbench-public/)
 - [IEEE Big Data Cup 2026](https://bigdataieee.org/BigData2026/cup/)
 - [OpenStreetMap copyright and license](https://www.openstreetmap.org/copyright)
 
-The citation supplied by the Kaggle competition text is: Jinxi Wu and Xuesong (Simon) Zhou. *2026 IEEE Big Data-Traffic Flow Bench*. Kaggle, 2026. <https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench>. The repository’s separate [`CITATION.cff`](trafficflowbench-public/CITATION.cff) cites Jinxi Wu, *TrafficFlowBench: a four-task freeway traffic benchmark*, version 1.0, 2026-09-03, using the GitHub repository URL.
+The citation supplied by the Kaggle competition text is: Jinxi Wu and Xuesong (Simon) Zhou. *2026 IEEE Big Data-Traffic Flow Bench*. Kaggle, 2026. <https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench>. The repository’s separate [`CITATION.cff`](../trafficflowbench-public/CITATION.cff) cites Jinxi Wu, *TrafficFlowBench: a four-task freeway traffic benchmark*, version 1.0, 2026-09-03, using the GitHub repository URL.

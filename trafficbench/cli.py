@@ -12,7 +12,7 @@ def main():
     p.add_argument('--profile', choices=['quick','full','holdout'], default='quick')
     p.add_argument('--output')
     p.add_argument('--scheme', default='config/cv_scheme.yaml')
-    p = sub.add_parser('new', help='Copy the example into a new experiment')
+    p = sub.add_parser('new', help='Create a solution package for a new experiment')
     p.add_argument('name')
     p.add_argument('--task', choices=['state','queue','odme'], default='state')
     p = sub.add_parser('run', help='Run an experiment and compare with the baseline')
@@ -46,13 +46,22 @@ def main():
     elif args.command == 'new':
         if not re.fullmatch(r'[a-z][a-z0-9_]*', args.name):
             parser.error('Use lowercase letters, digits and underscores; start with a letter')
-        path = Path('solutions') / (args.name + '.py')
-        text = Path('solutions/example.py').read_text() if args.task == 'state' else (
-            f'"""Change {args.task}(ctx) to test your idea."""\nfrom solutions import baseline\n\n\ndef {args.task}(ctx):\n'
-            f'    out = baseline.{args.task}(ctx)\n    # Your idea goes here. ctx.params contains command-line parameters.\n    return out\n')
-        with path.open('x') as f:
-            f.write(text)
-        print(f'Created {path}. Run: bench run {args.name} --task {args.task}')
+        path = Path('solutions') / args.name
+        if path.with_suffix('.py').exists():
+            parser.error(f'{path.with_suffix(".py")} already exists')
+        if path.exists():
+            parser.error(f'{path} already exists')
+        path.mkdir()
+        (path / '__init__.py').write_text(f'from .model import {args.task}\n')
+        (path / 'model.py').write_text(
+            f'"""Implement the {args.task} approach here; add helper modules as needed."""\n'
+            'from solutions import baseline\n\n\n'
+            f'def {args.task}(ctx):\n'
+            f'    out = baseline.{args.task}(ctx)\n'
+            '    # Replace or improve the baseline. Parameters are in ctx.params.\n'
+            '    return out\n'
+        )
+        print(f'Created {path}/. Run: bench run {args.name} --task {args.task}')
     elif args.command == 'run':
         from .runner import run
         params = json.loads(args.params)

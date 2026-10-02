@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,7 @@ from trafficbench.contracts import KEYS, validate_predictions
 from trafficbench.fixture import make_fixture
 from trafficbench.metrics import aggregate, queue_metrics, state_metrics
 from trafficbench.prepare import prepare
-from trafficbench.runner import compare, run, verify_bundle
+from trafficbench.runner import compare, run, solution_hash, verify_bundle
 from trafficbench.submission import COLUMNS, assemble, validate_submission
 
 
@@ -90,7 +91,34 @@ def test_baselines_end_to_end(bundle, tmp_path, task):
     assert metadata['status'] == 'completed'
     assert metadata['metrics']
     assert list((path / 'predictions').rglob('*.parquet'))
-    assert (path / 'source/solutions/baseline.py').exists()
+    assert (path / 'source/solutions/baseline/model.py').exists()
+    assert (path / 'source/solutions/baseline/__init__.py').exists()
+
+
+def test_new_creates_solution_package(tmp_path, monkeypatch):
+    from trafficbench.cli import main
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'solutions').mkdir()
+    monkeypatch.setattr(sys, 'argv', ['bench', 'new', 'new_queue', '--task', 'queue'])
+    main()
+    path = tmp_path / 'solutions/new_queue'
+    assert (path / '__init__.py').read_text() == 'from .model import queue\n'
+    assert 'def queue(ctx):' in (path / 'model.py').read_text()
+    with pytest.raises(SystemExit):
+        main()
+
+
+def test_solution_hash_includes_helper_modules(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / 'solutions/baseline'
+    path.mkdir(parents=True)
+    (path / '__init__.py').write_text('from .model import state\n')
+    (path / 'model.py').write_text('from .helper import value\n')
+    helper = path / 'helper.py'
+    helper.write_text('value = 1\n')
+    before = solution_hash('baseline')
+    helper.write_text('value = 2\n')
+    assert solution_hash('baseline') != before
 
 
 def test_failure_is_logged(bundle, tmp_path):
