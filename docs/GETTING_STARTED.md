@@ -5,14 +5,18 @@ scoring, prediction checks, baseline comparisons and saving results.
 
 ## First time
 
-Use Python 3.12, then run these commands from the repository root:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run
+these commands from the repository root:
 
 ```sh
-python3.12 -m venv .venv
+uv python install 3.12
+uv sync --locked
 source .venv/bin/activate
-python -m pip install -r requirements.lock
-python -m pip install --no-deps -e .
 ```
+
+The checked-in `uv.lock` fixes the team environment. Use `uv add PACKAGE` when
+an approach needs another dependency, and commit both `pyproject.toml` and the
+updated lockfile.
 
 Get the competition download from Kaggle. You can use the zip directly:
 

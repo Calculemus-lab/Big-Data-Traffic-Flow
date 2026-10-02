@@ -16,21 +16,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: requirements.lock
-      - run: python -m pip install -r requirements.lock
-      - run: python -m pip install --no-deps -e .
-      - run: python -m pytest -q
+          python-version-file: .python-version
+      - uses: astral-sh/setup-uv@v9
+        with:
+          version: '0.12.5'
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --locked python -m pytest -q
       - name: Exercise the teammate commands on synthetic data
         run: |
-          bench fixture --output data/fixture
-          bench prepare --data data/fixture --output data/ci
-          bench new ci_example
-          bench run ci_example --task state --bundle data/ci
-          bench run baseline --task queue --bundle data/ci
-          bench run baseline --task odme --bundle data/ci
-          bench summary
+          uv run --locked bench fixture --output data/fixture
+          uv run --locked bench prepare --data data/fixture --output data/ci
+          uv run --locked bench new ci_example
+          uv run --locked bench run ci_example --task state --bundle data/ci
+          uv run --locked bench run baseline --task queue --bundle data/ci
+          uv run --locked bench run baseline --task odme --bundle data/ci
+          uv run --locked bench summary
       - name: Add experiment reports to the job summary
         if: always()
         run: |

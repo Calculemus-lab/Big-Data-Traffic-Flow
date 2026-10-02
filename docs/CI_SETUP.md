@@ -106,6 +106,6 @@ final submission, preserve the selected model, predictions, data and environment
 Generating validation/private predictions remains the experiment author's job;
 `bench assemble` and `bench validate` check the resulting submission.
 
-Run project checks locally with `python -m pytest -q`. Branch protection can make
-Checks mandatory if your repository settings support it, but is not required for
-the workflows themselves.
+Run project checks locally with `uv run --locked python -m pytest -q`. Branch
+protection can make Checks mandatory if your repository settings support it,
+but is not required for the workflows themselves.

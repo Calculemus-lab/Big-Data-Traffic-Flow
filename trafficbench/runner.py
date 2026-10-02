@@ -23,7 +23,7 @@ from .metrics import aggregate, odme_metrics, physics_diagnostics, queue_metrics
 
 
 def code_files():
-    return sorted(p for folder in ['trafficbench', 'solutions', 'config'] for p in Path(folder).rglob('*') if p.is_file() and p.suffix in {'.py', '.yaml', '.json'}) + [p for p in [Path('pyproject.toml'), Path('requirements.lock')] if p.exists()]
+    return sorted(p for folder in ['trafficbench', 'solutions', 'config'] for p in Path(folder).rglob('*') if p.is_file() and p.suffix in {'.py', '.yaml', '.json'}) + [p for p in [Path('pyproject.toml'), Path('uv.lock'), Path('.python-version')] if p.exists()]
 
 
 def code_hash():

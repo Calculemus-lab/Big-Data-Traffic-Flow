@@ -6,11 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "trafficbench-team"
 version = "0.1.0"
 description = "Shared experiments for TrafficFlowBench"
-requires-python = ">=3.11"
-dependencies = ["numpy>=1.26", "pandas>=2.2", "pyarrow>=16", "scipy>=1.13", "PyYAML>=6"]
+requires-python = ">=3.12"
+dependencies = ["numpy==2.5.3", "pandas==3.0.6", "pyarrow==25.0.1", "scipy==1.18.1", "PyYAML==6.0.3"]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
+[dependency-groups]
+dev = ["pytest==9.1.1"]
 
 [project.scripts]
 bench = "trafficbench.cli:main"
