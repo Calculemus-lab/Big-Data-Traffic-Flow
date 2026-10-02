@@ -1,0 +1,3 @@
+# Generated lockfiles must be regenerated after dependency conflicts, not
+# line-merged. Git will flag concurrent uv.lock changes as a conflict.
+uv.lock merge=binary

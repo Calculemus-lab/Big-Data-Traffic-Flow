@@ -6,11 +6,16 @@ build-backend = "setuptools.build_meta"
 name = "trafficbench-team"
 version = "0.1.0"
 description = "Shared experiments for TrafficFlowBench"
-requires-python = ">=3.12"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
 dependencies = ["numpy==2.5.3", "pandas==3.0.6", "pyarrow==25.0.1", "scipy==1.18.1", "PyYAML==6.0.3"]
 
 [dependency-groups]
-dev = ["pytest==9.1.1"]
+dev = [
+    "kaggle>=2.2.4",
+    "pyright>=1.1.407",
+    "pytest==9.1.1",
+]
 
 [project.scripts]
 bench = "trafficbench.cli:main"
@@ -20,3 +25,10 @@ include = ["trafficbench*", "solutions*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+required-version = "==0.12.5"
+
+[tool.pyright]
+typeCheckingMode = "standard"
+include = ["scripts", "trafficbench", "solutions"]

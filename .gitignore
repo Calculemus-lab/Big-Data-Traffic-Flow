@@ -1,3 +1,8 @@
+# release directory containing data and sample submissions (https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/data)
+**/kaggle_public/
+
+**/.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -77,6 +82,10 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
+
+# Experiment scratch space at any depth
+temp/
 
 # IPython
 profile_default/
