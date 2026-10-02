@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Competition data and generated experiment artifacts
+/data/
+/runs/
+/kaggle_public/
+*.zip
+*.kaggle-partial
+/init/

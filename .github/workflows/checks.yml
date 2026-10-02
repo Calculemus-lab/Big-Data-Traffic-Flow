@@ -1,0 +1,48 @@
+name: Checks
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install -r requirements.lock
+      - run: python -m pip install --no-deps -e .
+      - run: python -m pytest -q
+      - name: Exercise the teammate commands on synthetic data
+        run: |
+          bench fixture --output data/fixture
+          bench prepare --data data/fixture --output data/ci
+          bench new ci_example
+          bench run ci_example --task state --bundle data/ci
+          bench run baseline --task queue --bundle data/ci
+          bench run baseline --task odme --bundle data/ci
+          bench summary
+      - name: Add experiment reports to the job summary
+        if: always()
+        run: |
+          if [ -d runs ]; then
+            find runs -name report.md -exec cat {} \; >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-results
+          path: |
+            runs/
+            !runs/**/predictions/**
+          if-no-files-found: ignore
+          retention-days: 7
