@@ -333,22 +333,6 @@ Each record describes one detector station measuring one link during an interval
 | `is_missing`                | bool (0/1 encoded)             | Whether a required measurement was naturally unavailable                                                                             |
 | `mask_regime`               | string enum: `R1`, `R2`, `R3`   | Masking regime assigned to the observation date                                                                                      |
 
-The unmasked training records use `corridors/<PANEL>/train/mainline_states/year_month=<YYYY>-<MM>/synthetic_mainline_<YYYY>_<MM>_<DD>.parquet`. They have the same fields except `mask_regime`.
-
-Match a Task 1 template row to its masked record by matching `panel` to `corridor_id` and matching `timestamp`, `station_id`, `link_id`, and `mask_regime`. Use `link_id` to join static link attributes and topology.
-
-#### Masking
-
-Some `speed_kmh` and `flow_vph` values are naturally missing. Others are intentionally blanked for Task 1. The mask selects eligible link-time cells (the required measurements are present and `pct_observed >= 75`), excluding cells included in Task 2's history. Stations on the same link at the same time share the mask. Each date belongs to one regime, whose rate determines the share of the remaining eligible cells that are blanked:
-
-| `mask_regime` (key) | Task 1 mask rate |
-| ------------------- | ---------------: |
-| `R1`                |              20% |
-| `R2`                |              30% |
-| `R3`                |              50% |
-
-The masked mainline records also blank the Task 2 forecast horizon and the following hour on eligible cells. Those blanks and naturally missing values are not Task 1 targets. Use the Task 1 sample template to identify the requested station-time rows.
-
 ### Ramp observations: `corridors/<PANEL>/<SPLIT>/ramp_states/year_month=<YYYY>-<MM>/synthetic_ramp_<YYYY>_<MM>_<DD>.parquet`
 
 **Key within a panel:** (`timestamp`, `station_id`, `ramp_link_id`)
@@ -370,13 +354,24 @@ The masked mainline records also blank the Task 2 forecast horizon and the follo
 
 ## Task 1: traffic-state reconstruction
 
-Predict the masked `speed_kmh` and `flow_vph` values listed in the Task 1 sample template for each panel and split.
+Reconstruct the masked `speed_kmh` and `flow_vph` values in mainline traffic data.
+
+
+### Masking
+
+Some `speed_kmh` and `flow_vph` values in mainline traffic data are naturally missing. Others are intentionally blanked for this task. The mask selects eligible link-time cells, where the required measurements are present and `pct_observed >= 75`. Stations on the same link at the same time share the mask. Each date belongs to one regime, whose rate determines the share of eligible cells selected for Task 1 masking:
+
+| `mask_regime` (key) | Task 1 mask rate |
+| ------------------- | ---------------: |
+| `R1`                |              20% |
+| `R2`                |              30% |
+| `R3`                |              50% |
 
 ![Masking Figure](../official_competition_repo/figures/task1_what_is_asked.png)
 
 ### Inputs and submission
 
-The masked mainline records provide the traffic context. Null `speed_kmh` and `flow_vph` values can be natural missing data or intentional masks, so use the Task 1 template to identify which cells to predict. The template is `task1/<PANEL>/<SPLIT>/sample_submission_state.csv` in the release package.
+Per panel and split the template documents under `task1/<PANEL>/<SPLIT>/sample_submission_state.csv` identify which rows were masked and thus have to be predicted:
 
 **Key:** (`panel`, `timestamp`, `station_id`, `link_id`, `mask_regime`)
 
@@ -390,7 +385,9 @@ The masked mainline records provide the traffic context. Null `speed_kmh` and `f
 | `speed_kmh`    | float, blank in template      | Predicted speed in kilometres per hour                        |
 | `flow_vph`     | float, blank in template      | Predicted total flow across lanes, in vehicles per hour        |
 
-Fill `speed_kmh` and `flow_vph` in a copy of each panel and split template. Append those rows into one `state_predictions.csv` for scoring or merging.
+Fill `speed_kmh` and `flow_vph` in a copy of each panel and split template. To score them together, append those rows into one `state_predictions.csv`.
+
+To obtain features for the row in the template, match it to its corresponding masked record by matching `panel` to `corridor_id` and matching `timestamp`, `station_id`, `link_id`, and `mask_regime`. Use `link_id` to join static link attributes and topology.
 
 ### Scoring
 
@@ -410,7 +407,7 @@ $$
 
 The RMSE normalizers are 25 km/hour for speed and 600 vehicles/hour/lane for flow. Before the flow RMSE, the scorer divides submitted and true total flow by the link's lane count. Missing or non-finite predictions count as zero, and their target cells remain included in the RMSE calculation.
 
-The unmasked training data is available under `corridors/<PANEL>/train/mainline_states/year_month=<YYYY>-<MM>/synthetic_mainline_<YYYY>_<MM>_<DD>.parquet`. It contains the true `speed_kmh` and `flow_vph` values for training targets. Validation and private target values are withheld.
+The unmasked mainline traffic data for the `train` split is available under `corridors/<PANEL>/train/mainline_states/year_month=<YYYY>-<MM>/synthetic_mainline_<YYYY>_<MM>_<DD>.parquet`. It contains the true `speed_kmh` and `flow_vph` values for training targets. Validation and private target values are withheld.
 
 The [Task 1 scorer](../official_competition_repo/src/task1/score_task1.py) compares predictions with this unmasked training data. Run it from the repository root:
 
@@ -492,6 +489,8 @@ Use `window_id` to associate history rows with their window metadata and forecas
 | `timestamp`         | string (UTC timestamp)    | Time of the forecast step                                     |
 | `link_id`           | string          | Mainline link to predict                                      |
 | `queue_pred`        | bool (0/1 encoded) | Predicted queue state: 1 if queued, 0 if not queued           |
+
+For each Task 2 window, eligible observations in the masked mainline traffic data are blanked throughout the 30-minute forecast horizon and the following hour. Use the 60-minute history table above for context, and predict only the future timestamps in this template.
 
 Fill `queue_pred` in a copy of each included panel’s template. Append the rows into one `queue_submission.csv` for scoring or merging.
 
