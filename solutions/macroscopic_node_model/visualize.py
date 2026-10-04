@@ -1,4 +1,4 @@
-"""Draw LWR mainline topology as a directed graph from ctx.network tables."""
+"""Draw LWR mainline topology as an interactive HTML graph."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -7,6 +7,8 @@ from pathlib import Path
 import networkx as nx
 import pandas as pd
 from pyvis.network import Network
+
+from .network import LwrNetwork
 
 _COLOR_MAINLINE = "#1f77b4"
 _COLOR_IN = "#2ca02c"
@@ -26,226 +28,6 @@ _EXTERNAL_X_SLACK = 1.2
 _LABEL_VADJUST_STEP = 22
 _SPRING_K = 0.62
 _SPRING_ITERATIONS = 140
-
-
-def _split_ids(value) -> list[str]:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return []
-    text = str(value).strip()
-    if not text or text.lower() == "nan":
-        return []
-    return [part.strip() for part in text.split(";") if part.strip()]
-
-
-def _split_flags(value) -> list[int | None]:
-    parts = _split_ids(value)
-    out: list[int | None] = []
-    for part in parts:
-        if part in ("", "nan"):
-            out.append(None)
-        else:
-            out.append(int(float(part)))
-    return out
-
-
-def _is_mainline(link_id: str, mainline_ids: set[str]) -> bool:
-    return link_id in mainline_ids
-
-
-def _is_conn(link_id: str) -> bool:
-    return link_id.startswith("CONN-")
-
-
-def _scalar(value):
-    if value is None:
-        return None
-    if isinstance(value, float) and pd.isna(value):
-        return None
-    if isinstance(value, str) and (not value.strip() or value.lower() == "nan"):
-        return None
-    return value
-
-
-def _scalar_row(row: pd.Series, key: str):
-    if key not in row.index:
-        return None
-    return _scalar(row[key])
-
-
-def _conn_port(link_id: str) -> str:
-    if link_id.endswith("-IN"):
-        return "IN"
-    if link_id.endswith("-OUT"):
-        return "OUT"
-    return "unknown"
-
-
-def _build_graph(topo: pd.DataFrame, network: dict) -> nx.DiGraph:
-    mainline_ids = set(topo["link_id"].astype(str))
-    ramp_map = network.get("ramp_attachment_map")
-    links_table = network.get("links")
-    fd_table = network.get("fd_parameters")
-
-    ramp_by_id: dict[str, dict] = {}
-    if ramp_map is not None and not ramp_map.empty:
-        ramp_by_id = ramp_map.set_index("ramp_link_id").to_dict("index")
-
-    links_by_id: dict[str, dict] = {}
-    if links_table is not None and not links_table.empty:
-        links_by_id = links_table.set_index("link_id").to_dict("index")
-
-    fd_by_id: dict[str, dict] = {}
-    if fd_table is not None and not fd_table.empty:
-        fd_by_id = fd_table.set_index("link_id").to_dict("index")
-
-    max_node = int(max(topo["from_node"].max(), topo["to_node"].max()))
-    next_external = max_node + 1
-    external_nodes: dict[str, int] = {}
-
-    def external_node(link_id: str) -> int:
-        nonlocal next_external
-        if link_id not in external_nodes:
-            external_nodes[link_id] = next_external
-            next_external += 1
-        return external_nodes[link_id]
-
-    graph = nx.DiGraph()
-    added_link_ids: set[str] = set()
-
-    def add_edge(**kwargs) -> None:
-        link_id = str(kwargs["link_id"])
-        if link_id in added_link_ids:
-            return
-        added_link_ids.add(link_id)
-        graph.add_edge(kwargs.pop("u"), kwargs.pop("v"), **kwargs)
-
-    for _, row in topo.iterrows():
-        link_id = str(row["link_id"])
-        u = int(row["from_node"])
-        v = int(row["to_node"])
-        links_rec = links_by_id.get(link_id, {})
-        fd_rec = fd_by_id.get(link_id, {})
-        add_edge(
-            u=u,
-            v=v,
-            kind="mainline",
-            link_id=link_id,
-            mainline_link_id=str(_scalar_row(row, "mainline_link_id") or link_id),
-            order_index=_scalar_row(row, "order_index"),
-            from_node=u,
-            to_node=v,
-            lanes=_scalar_row(row, "lanes"),
-            length_km=_scalar_row(row, "length_km"),
-            capacity_vph=_scalar_row(row, "capacity_vph"),
-            free_speed_kmh=_scalar_row(row, "free_speed_kmh"),
-            free_flow_speed_kmh=_scalar_row(row, "free_flow_speed_kmh"),
-            has_sensor=_scalar_row(row, "has_sensor"),
-            detector_id=_scalar_row(row, "detector_id"),
-            incoming_link_ids=_scalar_row(row, "incoming_link_ids"),
-            outgoing_link_ids=_scalar_row(row, "outgoing_link_ids"),
-            on_ramp_link_ids=_scalar_row(row, "on_ramp_link_ids"),
-            off_ramp_link_ids=_scalar_row(row, "off_ramp_link_ids"),
-            incoming_has_sensor=_scalar_row(row, "incoming_has_sensor"),
-            outgoing_has_sensor=_scalar_row(row, "outgoing_has_sensor"),
-            n_incoming=_scalar_row(row, "n_incoming"),
-            n_outgoing=_scalar_row(row, "n_outgoing"),
-            n_incoming_no_sensor=_scalar_row(row, "n_incoming_no_sensor"),
-            n_outgoing_no_sensor=_scalar_row(row, "n_outgoing_no_sensor"),
-            links_length_km=_scalar(links_rec.get("length_km")),
-            links_lanes=_scalar(links_rec.get("lanes")),
-            links_free_speed_kmh=_scalar(links_rec.get("free_speed_kmh")),
-            links_capacity_vph=_scalar(links_rec.get("capacity_vph")),
-            critical_density=_scalar(fd_rec.get("critical_density")),
-            k_jam=_scalar(fd_rec.get("k_jam")),
-        )
-
-        incoming = _split_ids(row["incoming_link_ids"])
-        incoming_sensors = _split_flags(row["incoming_has_sensor"])
-        for idx, inc_id in enumerate(incoming):
-            if _is_mainline(inc_id, mainline_ids):
-                continue
-            sensor = incoming_sensors[idx] if idx < len(incoming_sensors) else None
-            if _is_conn(inc_id):
-                ext = external_node(inc_id)
-                add_edge(
-                    u=ext,
-                    v=u,
-                    kind="conn",
-                    link_id=inc_id,
-                    conn_port=_conn_port(inc_id),
-                    has_sensor=sensor,
-                    host_mainline_link_id=link_id,
-                    host_from_node=u,
-                    host_to_node=v,
-                    attach_node=u,
-                    host_incoming_link_ids=_scalar_row(row, "incoming_link_ids"),
-                    host_outgoing_link_ids=_scalar_row(row, "outgoing_link_ids"),
-                    host_incoming_has_sensor=_scalar_row(row, "incoming_has_sensor"),
-                    host_outgoing_has_sensor=_scalar_row(row, "outgoing_has_sensor"),
-                )
-
-        outgoing = _split_ids(row["outgoing_link_ids"])
-        outgoing_sensors = _split_flags(row["outgoing_has_sensor"])
-        for idx, out_id in enumerate(outgoing):
-            if _is_mainline(out_id, mainline_ids):
-                continue
-            sensor = outgoing_sensors[idx] if idx < len(outgoing_sensors) else None
-            if _is_conn(out_id):
-                ext = external_node(out_id)
-                add_edge(
-                    u=v,
-                    v=ext,
-                    kind="conn",
-                    link_id=out_id,
-                    conn_port=_conn_port(out_id),
-                    has_sensor=sensor,
-                    host_mainline_link_id=link_id,
-                    host_from_node=u,
-                    host_to_node=v,
-                    attach_node=v,
-                    host_incoming_link_ids=_scalar_row(row, "incoming_link_ids"),
-                    host_outgoing_link_ids=_scalar_row(row, "outgoing_link_ids"),
-                    host_incoming_has_sensor=_scalar_row(row, "incoming_has_sensor"),
-                    host_outgoing_has_sensor=_scalar_row(row, "outgoing_has_sensor"),
-                )
-
-        for ramp_id in _split_ids(row["on_ramp_link_ids"]):
-            ext = external_node(ramp_id)
-            ramp_rec = ramp_by_id.get(ramp_id, {})
-            add_edge(
-                u=ext,
-                v=u,
-                kind="on_ramp",
-                link_id=ramp_id,
-                ramp_type=_scalar(ramp_rec.get("ramp_type")) or "OR",
-                ramp_link_id=ramp_id,
-                nearest_mainline_link_id=_scalar(ramp_rec.get("nearest_mainline_link_id")),
-                host_mainline_link_id=link_id,
-                host_from_node=u,
-                host_to_node=v,
-                attach_node=u,
-                has_sensor=None,
-            )
-
-        for ramp_id in _split_ids(row["off_ramp_link_ids"]):
-            ext = external_node(ramp_id)
-            ramp_rec = ramp_by_id.get(ramp_id, {})
-            add_edge(
-                u=v,
-                v=ext,
-                kind="off_ramp",
-                link_id=ramp_id,
-                ramp_type=_scalar(ramp_rec.get("ramp_type")) or "FR",
-                ramp_link_id=ramp_id,
-                nearest_mainline_link_id=_scalar(ramp_rec.get("nearest_mainline_link_id")),
-                host_mainline_link_id=link_id,
-                host_from_node=u,
-                host_to_node=v,
-                attach_node=v,
-                has_sensor=None,
-            )
-
-    return graph
 
 
 def _mainline_nodes(topo: pd.DataFrame) -> set[int]:
@@ -273,10 +55,10 @@ def _external_groups(
     incoming_at: dict[int, list[int]] = defaultdict(list)
     outgoing_at: dict[int, list[int]] = defaultdict(list)
     for u, v, data in graph.edges(data=True):
-        kind = data.get("kind", "mainline")
-        if kind in ("conn", "on_ramp") and u not in mainline_nodes:
+        edge_type = data.get("type", "link")
+        if edge_type in ("conn-in", "on-ramp") and u not in mainline_nodes:
             incoming_at[v].append(u)
-        if kind in ("conn", "off_ramp") and v not in mainline_nodes:
+        if edge_type in ("conn-out", "off-ramp") and v not in mainline_nodes:
             outgoing_at[u].append(v)
     return incoming_at, outgoing_at
 
@@ -357,12 +139,6 @@ def _smart_layout(
     return relaxed
 
 
-def _sensor_label(has_sensor) -> str:
-    if has_sensor is None:
-        return "?"
-    return "S" if int(has_sensor) else "0"
-
-
 def _fmt_num(value, digits: int = 0) -> str | None:
     if value is None:
         return None
@@ -378,12 +154,12 @@ def _fmt_num(value, digits: int = 0) -> str | None:
 
 
 def _edge_color(data: dict) -> str:
-    kind = data.get("kind", "mainline")
-    if kind == "mainline":
+    edge_type = data.get("type", "link")
+    if edge_type == "link":
         return _COLOR_MAINLINE
-    if kind == "on_ramp" or (kind == "conn" and data.get("conn_port") == "IN"):
+    if edge_type in ("on-ramp", "conn-in"):
         return _COLOR_IN
-    if kind == "off_ramp" or (kind == "conn" and data.get("conn_port") == "OUT"):
+    if edge_type in ("off-ramp", "conn-out"):
         return _COLOR_OUT
     return "#999999"
 
@@ -392,13 +168,11 @@ def _endpoint_node_sets(graph: nx.DiGraph, mainline_nodes: set[int]) -> tuple[se
     inbound: set[int] = set()
     outbound: set[int] = set()
     for u, v, data in graph.edges(data=True):
-        kind = data.get("kind")
-        if kind == "on_ramp" or (kind == "conn" and data.get("conn_port") == "IN"):
-            if u not in mainline_nodes:
-                inbound.add(u)
-        if kind == "off_ramp" or (kind == "conn" and data.get("conn_port") == "OUT"):
-            if v not in mainline_nodes:
-                outbound.add(v)
+        edge_type = data.get("type")
+        if edge_type in ("on-ramp", "conn-in") and u not in mainline_nodes:
+            inbound.add(u)
+        if edge_type in ("off-ramp", "conn-out") and v not in mainline_nodes:
+            outbound.add(v)
     return inbound, outbound
 
 
@@ -413,17 +187,13 @@ def _node_color(node: int, mainline_nodes: set[int], inbound: set[int], outbound
 
 
 def _mainline_edge_label(data: dict) -> str:
-    lines = [str(data.get("link_id", "")).strip()]
-    lanes = _fmt_num(data.get("lanes") or data.get("links_lanes"))
-    length = _fmt_num(data.get("length_km") or data.get("links_length_km"), 2)
-    v_free = _fmt_num(
-        data.get("free_speed_kmh")
-        or data.get("links_free_speed_kmh")
-        or data.get("free_flow_speed_kmh")
-    )
-    capacity = _fmt_num(data.get("capacity_vph") or data.get("links_capacity_vph"))
-    k_c = _fmt_num(data.get("critical_density"), 1)
-    k_jam = _fmt_num(data.get("k_jam"), 0)
+    lines = [str(data.get("id", "")).strip()]
+    lanes = _fmt_num(data.get("lanes"))
+    length = _fmt_num(data.get("length"), 2)
+    v_free = _fmt_num(data.get("v_f"))
+    capacity = _fmt_num(data.get("C"))
+    k_c = _fmt_num(data.get("k_c"), 1)
+    k_jam = _fmt_num(data.get("k_j"), 0)
     if lanes:
         lines.append(f"L{lanes}")
     if length:
@@ -491,10 +261,9 @@ def _aux_edge_label(link_id: str) -> tuple[str, dict]:
 
 
 def _vis_edge_label(data: dict) -> tuple[str, dict]:
-    kind = data.get("kind", "mainline")
-    if kind == "mainline":
+    if data.get("type") == "link":
         return _mainline_edge_label(data), {"size": 7, "align": "middle", "multi": True}
-    label, font = _aux_edge_label(str(data.get("link_id", "")))
+    label, font = _aux_edge_label(str(data.get("id", "")))
     font.setdefault("multi", True)
     return label, font
 
@@ -596,7 +365,7 @@ def _draw_html(
 
     vadjusts, smooths = _junction_edge_styles(graph)
     for u, v, data in graph.edges(data=True):
-        kind = data.get("kind", "mainline")
+        edge_type = data.get("type", "link")
         label, font = _vis_edge_label(data)
         key = (u, v)
         if key in vadjusts:
@@ -605,7 +374,7 @@ def _draw_html(
             "label": label,
             "font": font,
             "title": "",
-            "width": 1.5 if kind == "mainline" else 1.0,
+            "width": 1.5 if edge_type == "link" else 1.0,
         }
         if key in smooths:
             edge_kwargs["smooth"] = smooths[key]
@@ -625,18 +394,20 @@ def _draw_html(
     return output_path
 
 
-def draw_topology(ctx) -> Path | None:
-    """Build and save a directed topology figure for ctx.panel (once per cache)."""
-    if ctx.cache.get(_CACHE_KEY):
+def draw_topology(network: LwrNetwork, ctx=None) -> Path | None:
+    """Save an interactive topology HTML for a built LwrNetwork (optional ctx cache)."""
+    if ctx is not None and ctx.cache.get(_CACHE_KEY):
         return ctx.cache.get("topology_path")
 
-    topo = ctx.network.get("lwr_mainline_topology")
-    if topo is None or topo.empty:
-        return None
-
-    graph = _build_graph(topo, ctx.network)
-    output = Path("results") / "macroscopic_node_model" / f"{ctx.panel}_topology.html"
-    path = _draw_html(graph, topo, ctx.panel, output, seed=ctx.seed)
-    ctx.cache[_CACHE_KEY] = True
-    ctx.cache["topology_path"] = path
+    output = Path("results") / "macroscopic_node_model" / f"{network.panel}_topology.html"
+    path = _draw_html(
+        network.graph,
+        network.topo,
+        network.panel,
+        output,
+        seed=network.seed,
+    )
+    if ctx is not None:
+        ctx.cache[_CACHE_KEY] = True
+        ctx.cache["topology_path"] = path
     return path
