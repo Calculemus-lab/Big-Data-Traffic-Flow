@@ -6,13 +6,13 @@ Queue and OD synthetic scores are proxies. Physics values are diagnostics. No lo
 
 | Metric | Result | Baseline | Change |
 | --- | ---: | ---: | ---: |
-| speed_rmse | 3.810570 | 16.202798 | -12.392229 |
-| flow_per_lane_rmse | 40.010746 | 118.771734 | -78.760987 |
-| state_score | 0.887017 | 0.558961 | +0.328056 |
-| fd_relative_error_diagnostic | 0.025620 | 0.067809 | -0.042189 |
+| speed_rmse | 3.616500 | 16.202798 | -12.586299 |
+| flow_per_lane_rmse | 39.540380 | 118.771734 | -79.231354 |
+| state_score | 0.891569 | 0.558961 | +0.332608 |
+| fd_relative_error_diagnostic | 0.024384 | 0.067809 | -0.043425 |
 | low_flow_fraction_diagnostic | 0.000000 | 0.000000 | +0.000000 |
 | negative_state_fraction_diagnostic | 0.000000 | 0.000000 | +0.000000 |
 
-Elapsed: 4.0s. Peak process memory: 1229 MB.
+Elapsed: 4.5s. Peak process memory: 1026 MB.
 
 Per-panel, regime, condition and window results: metrics.csv. Predictions: predictions/.

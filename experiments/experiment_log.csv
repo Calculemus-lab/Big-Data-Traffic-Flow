@@ -1,1 +1,3 @@
-timestamp,idea,theme,branch,cv_scheme,cv_score,leaderboard_score,status,oof_path,test_path,notes
+timestamp;idea;theme;branch;cv_scheme;cv_score;leaderboard_score;status;oof_path;test_path;notes
+2026-10-04T22:30;Improve baseline + residual interpolation;task1-state;cycle-1/CAL-14/improve-base-residual-interp;shared_cv_v1 quick;0.8870;-;completed;results/residual_interp_metrics.csv;-;"""tau=12 flow_mode=mult smooth=1 half_life_days=56; baseline 0.559; tau=6 0.868, tau=3 0.824; without profile improvements 0.792"""
+2026-10-05T21:50;Residual interpolation + Tau sweeping;task1-state;cycle-1/CAL-14/improve-base-residual-interp;shared_cv_v1 quick;0.8916;-;completed;results/residual_interp_metrics.csv;-;"""tau sweep 3-22; plateau from ~16; chose tau=20 (22: 0.8920, within noise); baseline 0.559"""
