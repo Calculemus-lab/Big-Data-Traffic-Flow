@@ -16,7 +16,7 @@ DEFAULTS = {
     'half_life_days': 56,    # weight recent training days more; 0 = equal weights
     'day_groups': 'dow',     # 'dow' = 7 day types; 'pooled' = Mon-Fri share one profile
     # --- interpolation ---
-    'tau': 6,                # decay of anchor weight, in 5-min steps (6 = 30 min)
+    'tau': 20,                # decay of anchor weight, in 5-min steps (6 = 30 min)
     'min_pct': 75,           # visible cells with pct_observed >= this are anchors
     'speed_mode': 'add',     # 'add' or 'mult'
     'flow_mode': 'mult',     # 'add' or 'mult'
