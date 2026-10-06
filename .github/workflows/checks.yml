@@ -22,15 +22,28 @@ jobs:
           version: '0.12.5'
           enable-cache: true
       - run: uv sync --locked
+      - name: Check Python types
+        run: uv run --locked pyright
+      - name: Check Python style
+        run: |
+          uv run --locked ruff check
+          uv run --locked ruff format --check
       - run: uv run --locked python -m pytest -q
       - name: Exercise the teammate commands on synthetic data
         run: |
           uv run --locked bench fixture --output data/fixture
-          uv run --locked bench prepare --data data/fixture --output data/ci
+          uv run --locked bench prepare \
+            --data data/fixture \
+            --history-start-date 2030-11-03 \
+            --history-end-date 2030-11-20 \
+            --prediction-start-date 2030-11-20 \
+            --prediction-end-date 2030-11-28 \
+            --output data/ci \
+            --panel D12_I5_N
           uv run --locked bench new ci_example
-          uv run --locked bench run ci_example --task state --bundle data/ci
-          uv run --locked bench run baseline --task queue --bundle data/ci
-          uv run --locked bench run baseline --task odme --bundle data/ci
+          uv run --locked bench experiment ci_example --task state --benchmark data/ci
+          uv run --locked bench experiment baseline --task queue --benchmark data/ci
+          uv run --locked bench experiment baseline --task odme --benchmark data/ci
           uv run --locked bench summary
       - name: Add experiment reports to the job summary
         if: always()
@@ -44,6 +57,6 @@ jobs:
           name: smoke-results
           path: |
             runs/
-            !runs/**/predictions/**
+            !runs/**/predictions.csv
           if-no-files-found: ignore
           retention-days: 7

@@ -1,3 +1,5 @@
 """Shared, task-aware experiment runner."""
 
-VERSION = "1"
+from __future__ import annotations
+
+VERSION = "5"

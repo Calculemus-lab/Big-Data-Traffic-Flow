@@ -1,28 +1,10 @@
-name: shared_cv_v1
+name: cutoff_holdout_v1
 seed: 69420
-train_start: '2030-06-01'
-folds:
-  december:
-    start: '2030-12-01'
-    end: '2031-01-01'
-  january:
-    start: '2031-01-01'
-    end: '2031-02-01'
-  february:
-    start: '2031-02-01'
-    end: '2031-03-01'
 profiles:
   quick:
     panels: [D12_I5_N]
-    folds: [december]
-    train_days: 28
-    eval_days: 7
   full:
     panels: all
-    folds: [december, january]
-  holdout:
-    panels: all
-    folds: [february]
 queue:
   windows_per_condition: 5
   minimum_spacing_minutes: 360
