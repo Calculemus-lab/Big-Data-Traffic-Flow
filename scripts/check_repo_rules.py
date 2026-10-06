@@ -44,12 +44,7 @@ def main() -> int:
     """Check branch names and tracked artifact locations; return a shell status."""
     branch = os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME")
     errors: list[str] = []
-    if (
-        branch
-        and branch != "main"
-        and branch not in LEGACY_BRANCHES
-        and not BRANCH_PATTERN.fullmatch(branch)
-    ):
+    if branch and branch != "main" and not BRANCH_PATTERN.fullmatch(branch):
         errors.append(f"branch {branch!r} must match cycle-#/CAL-#/experiment-name")
 
     tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")

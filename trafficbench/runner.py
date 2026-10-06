@@ -11,7 +11,6 @@ import importlib
 import importlib.metadata
 import json
 import platform
-import resource
 import shutil
 import subprocess
 import sys
@@ -214,14 +213,15 @@ def report(run_metadata: RunMetadata) -> str:
                 f"| {score - baseline_score:+.6f} |"
             )
     elapsed_seconds = run_metadata.seconds or 0.0
-    peak_memory_mb = run_metadata.peak_memory_mb or 0.0
+    peak_memory = (
+        f"{run_metadata.peak_memory_mb:.0f} MB"
+        if run_metadata.peak_memory_mb is not None
+        else "not measured on this platform"
+    )
     report_lines.extend(
         [
             "",
-            (
-                f"Elapsed: {elapsed_seconds:.1f}s. "
-                f"Peak process memory: {peak_memory_mb:.0f} MB."
-            ),
+            (f"Elapsed: {elapsed_seconds:.1f}s. Peak process memory: {peak_memory}."),
         ]
     )
     if error_traceback := run_metadata.error:
@@ -533,11 +533,17 @@ def _save_result(
         start_time: Monotonic clock value recorded before execution.
     """
     run_metadata.seconds = time.perf_counter() - start_time
-    # macOS reports peak resident set size in bytes. Linux uses kilobytes.
-    peak_resident_memory = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    run_metadata.peak_memory_mb = peak_resident_memory / (
-        1024**2 if sys.platform == "darwin" else 1024
-    )
+    # The resource module is unavailable on Windows. Preserve local runs there
+    # and record peak memory on platforms that provide this operating-system API.
+    try:
+        import resource
+    except ImportError:
+        run_metadata.peak_memory_mb = None
+    else:
+        peak_resident_memory = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        run_metadata.peak_memory_mb = peak_resident_memory / (
+            1024**2 if sys.platform == "darwin" else 1024
+        )
     pl.DataFrame(score_rows).write_csv(run_directory / "metrics.csv")
     (run_directory / "run.json").write_text(
         run_metadata.model_dump_json(indent=2, exclude_none=True)
