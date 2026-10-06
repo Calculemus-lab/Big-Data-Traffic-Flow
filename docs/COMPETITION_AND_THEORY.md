@@ -1,17 +1,15 @@
 # Competition and traffic theory
 
-TrafficFlowBench has four scored components. Participants submit predictions
-for Tasks 1, 2, and 4. Task 3 scores the physical consistency of the Task 1
-predictions. The competition accepts prediction files, not Python functions.
-Trafficbench provides a local function interface for developing those
-predictions.
+TrafficFlowBench is a competition for predicting traffic conditions on
+synthetic freeway networks. Its tasks use related traffic data but ask for
+different outputs and evaluate different parts of a solution. This guide
+explains the tasks, the data available for each one, and the scoring rules.
 
-This guide explains the competition problems, the data a solution function
-receives, and how each task is scored. The
-[release package reference](RELEASE_PACKAGE_REFERENCE.md) documents the
-downloaded files and their columns. The
-[Trafficbench guide](TRAFFICBENCH.md) focuses on running solutions and
-preparing local cases.
+The [release package reference](RELEASE_PACKAGE_REFERENCE.md) documents the
+original downloaded files and their columns. **Trafficbench** is this
+repository's local runner for calling solution functions and assembling their
+prediction files. The [Trafficbench guide](TRAFFICBENCH.md) explains that
+interface and its commands.
 
 ## Competition at a glance
 

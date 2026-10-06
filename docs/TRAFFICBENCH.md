@@ -11,6 +11,8 @@ For task definitions and scoring, see
 downloaded from Kaggle, see the [release package reference](RELEASE_PACKAGE_REFERENCE.md).
 For installation and download steps, see [download the data](GET_DATA.md).
 
+**For a list of every `bench` command, see the [command reference](#command-reference).**
+
 ## The release dates and available labels
 
 The release covers eleven months. Each date split includes its start date and
@@ -71,12 +73,12 @@ proxy labels. The prediction period selects the rows the solution must fill.
 These four dates define the periods. Each includes its start date and excludes
 its end date:
 
-| Date field | Meaning |
-|---|---|
-| `history_start_date` | First date in the history period and the mainline/ramp input range. |
-| `history_end_date` | First date after the history period. |
-| `prediction_start_date` | First date in the requested prediction period. |
-| `prediction_end_date` | First date after the prediction period and the exclusive end of visible inputs. |
+| Date field              | Meaning                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `history_start_date`    | First date in the history period and the mainline/ramp input range.             |
+| `history_end_date`      | First date after the history period.                                            |
+| `prediction_start_date` | First date in the requested prediction period.                                  |
+| `prediction_end_date`   | First date after the prediction period and the exclusive end of visible inputs. |
 
 The history period must lie within train, where unmasked mainline measurements
 are available to obtain Task 1 answers and derive Task 2 proxy labels.
@@ -190,6 +192,27 @@ and returns the same panel-then-split mapping.
 function annotations. Their companion schemas document the expected columns.
 Pyright does not use those schemas to verify Polars column expressions such as
 `pl.col("speed_kmh")`, so column names are not statically checked.
+
+## Pass settings to a solution
+
+`bench run` and `bench experiment` accept solution settings as a JSON object
+through `--params`. Trafficbench stores that object in
+`release_slice.parameters`; it does not add another function argument. Each
+solution can read and validate the settings it uses. The option defaults to an
+empty object, `{}`. For example, the state example reads a `blend` setting and
+the baseline ODME solution reads a `regularization` setting:
+
+```sh
+uv run bench run example --task state --target-range validation \
+  --params '{"blend": 0.75}'
+
+uv run bench experiment baseline --task odme \
+  --benchmark data/benchmarks/quick \
+  --params '{"regularization": 0.1}'
+```
+
+These settings control the solution call. Case-generation settings are
+separate and are supplied to `bench prepare` through its `--scheme` file.
 
 ## Data passed to the solution
 
@@ -308,18 +331,18 @@ columns such as `task`, `split`, `panel`, `family`, `condition`, and
 `window_id` identify the rows being scored. `n` is a row or cell count, not a
 score.
 
-| Metric | Meaning | How to read it |
-| --- | --- | --- |
-| [`state_score`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction) | Task 1 score calculated separately for each mask regime from speed RMSE and per-lane flow RMSE. | Higher is better. It appears only when answer values are available. |
-| [`speed_rmse`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction) | Root mean square speed error, in km/h. | Lower is better. |
-| [`flow_per_lane_rmse`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction) | Root mean square error in flow per lane, in vehicles per hour per lane. | Lower is better. |
-| [`queue_proxy_iou`](COMPETITION_AND_THEORY.md#task-2-short-term-queue-forecasting) | Intersection over union for predicted and answer queue cells in one complete forecast window. | Between zero and one, with higher values better. Prepared train cases use proxy labels, so their score is not the official Task 2 score. |
-| [`fd_relative_error_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency) | Sum of absolute differences between predicted flow and fundamental-diagram flow, divided by the sum of absolute predicted flow, across the panel's requested rows. | Lower means closer agreement. This is a local diagnostic, not the official Task 3 score. |
-| [`low_flow_fraction_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency) | Fraction of Task 1 target rows with predicted total flow below 50 vehicles per hour. | Between zero and one. The official Task 3 scorer uses a low-flow cutoff in its FD score, but this summary fraction is not that score. |
-| [`negative_state_fraction_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency) | Fraction of Task 1 target rows where predicted speed or flow is negative. | Between zero and one; zero means no negative predictions. |
-| [`odme_link_score_diagnostic`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation) | Fit between observed link counts and counts implied by predicted path flows. | Between zero and one, with higher values indicating better count fit. It does not show whether hidden path flows are correct. |
-| [`odme_prior_relative_movement`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation) | Sum of absolute differences between predicted path flows and weak-prior path flows, divided by the prior's total flow. | Describes how far the estimate moved from the prior. Neither smaller nor larger is always better by itself. |
-| [`odme_synthetic_score`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation) | Weighted Task 4 score for a generated case with known path-flow answers: 45% path-flow accuracy, 25% link-count fit, 15% prior-deviation score, and 15% destination-attraction score. | Higher is better on those synthetic cases only. It is not a score against the competition's hidden path flows. |
+| Metric                                                                                                     | Meaning                                                                                                                                                                               | How to read it                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| [`state_score`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction)                             | Task 1 score calculated separately for each mask regime from speed RMSE and per-lane flow RMSE.                                                                                       | Higher is better. It appears only when answer values are available.                                                                      |
+| [`speed_rmse`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction)                              | Root mean square speed error, in km/h.                                                                                                                                                | Lower is better.                                                                                                                         |
+| [`flow_per_lane_rmse`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction)                      | Root mean square error in flow per lane, in vehicles per hour per lane.                                                                                                               | Lower is better.                                                                                                                         |
+| [`queue_proxy_iou`](COMPETITION_AND_THEORY.md#task-2-short-term-queue-forecasting)                         | Intersection over union for predicted and answer queue cells in one complete forecast window.                                                                                         | Between zero and one, with higher values better. Prepared train cases use proxy labels, so their score is not the official Task 2 score. |
+| [`fd_relative_error_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency)                    | Sum of absolute differences between predicted flow and fundamental-diagram flow, divided by the sum of absolute predicted flow, across the panel's requested rows.                    | Lower means closer agreement. This is a local diagnostic, not the official Task 3 score.                                                 |
+| [`low_flow_fraction_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency)                    | Fraction of Task 1 target rows with predicted total flow below 50 vehicles per hour.                                                                                                  | Between zero and one. The official Task 3 scorer uses a low-flow cutoff in its FD score, but this summary fraction is not that score.    |
+| [`negative_state_fraction_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency)              | Fraction of Task 1 target rows where predicted speed or flow is negative.                                                                                                             | Between zero and one; zero means no negative predictions.                                                                                |
+| [`odme_link_score_diagnostic`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation)   | Fit between observed link counts and counts implied by predicted path flows.                                                                                                          | Between zero and one, with higher values indicating better count fit. It does not show whether hidden path flows are correct.            |
+| [`odme_prior_relative_movement`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation) | Sum of absolute differences between predicted path flows and weak-prior path flows, divided by the prior's total flow.                                                                | Describes how far the estimate moved from the prior. Neither smaller nor larger is always better by itself.                              |
+| [`odme_synthetic_score`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation)         | Weighted Task 4 score for a generated case with known path-flow answers: 45% path-flow accuracy, 25% link-count fit, 15% prior-deviation score, and 15% destination-attraction score. | Higher is better on those synthetic cases only. It is not a score against the competition's hidden path flows.                           |
 
 Task 3 diagnostics are calculated from Task 1 predictions even when no Task 1
 answers are available. They do not include vehicle conservation and should not
@@ -488,5 +511,39 @@ row for every submission ID. The
 See [submit predictions](SUBMIT.md) for the
 manual and Kaggle command-line interface upload steps. See
 [experiment records](EXPERIMENTS.md)
-for comparing and recording local runs, and [hosted benchmark setup](CI_SETUP.md)
-for experiments on GitHub's hosted machines.
+for comparing and recording local runs, and
+[GitHub-hosted benchmark experiments](HOSTED_BENCHMARK_RUNS.md) for running
+prepared experiments on GitHub's hosted machines.
+
+## Command reference
+
+Run commands from the repository root with `uv run bench`. The guides above
+explain the workflows in detail; this section is a quick index of the available
+commands.
+
+### Create and run solutions
+
+| Command | Purpose |
+| --- | --- |
+| `bench new SOLUTION` | Create a package with starting predictors for Tasks 1, 2, and 4. |
+| `bench run [SOLUTION]` | Predict selected targets from the release. Choose a task with `--task`, targets with `--target-range` or explicit dates, panels with `--panel`, and optional solution settings with `--params`. |
+| `bench prepare` | Generate one reproducible local case from a train interval. Supply its history and prediction dates, and optionally choose `--profile` and `--scheme`. |
+| `bench experiment [SOLUTION]` | Run one task against an existing prepared case. Choose the task and case directory with `--task` and `--benchmark`; pass solution settings with `--params`. |
+
+### Review runs and prepare hosted experiments
+
+| Command | Purpose |
+| --- | --- |
+| `bench compare RUN_DIR...` | Compare saved runs that share benchmark and scoring conditions. |
+| `bench summary` | Export run metadata and metrics to a CSV file. |
+| `bench package-ci` | Package a prepared case into panel archives for the GitHub-hosted benchmark workflow. |
+| `bench fixture` | Create the small synthetic release used by repository checks. |
+
+### Assemble and check a submission
+
+| Command | Purpose |
+| --- | --- |
+| `bench assemble` | Combine the Task 1, 2, and 4 prediction files in the official submission format. |
+| `bench validate SUBMISSION.csv` | Check a combined submission against the official template. |
+
+Use `bench COMMAND --help` to see the full options for a command.
