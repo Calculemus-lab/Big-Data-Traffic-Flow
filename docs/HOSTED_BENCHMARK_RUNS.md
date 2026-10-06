@@ -1,11 +1,15 @@
-# Set up hosted benchmark runs
+# GitHub-hosted benchmark experiments
 
-The pull request and benchmark workflows run on Ubuntu machines hosted by
-GitHub. The team does not need to host or maintain those machines.
+The **Experiment benchmark** workflow is an optional way to run prepared local
+train cases on GitHub Actions. It gives the team a shared run environment and
+combines results across panels, which is useful when comparing solutions on
+different developers' computers. It does not make the competition submission
+or replace validation leaderboard results. The current workflow uses standard
+CPU runners, so it is intended for CPU experiments rather than GPU training.
 
-Pull request checks run after the workflow files are pushed to GitHub.
-Benchmark runs that use competition data need the one-time setup described
-below.
+Pull request checks are a separate workflow. They run automatically after
+changes are pushed to GitHub. Hosted benchmark runs use competition-derived
+data and require the one-time private-data setup below.
 
 ## Store prepared data privately
 
@@ -100,7 +104,11 @@ runner has 8 GB RAM, and the public-repository runner has 16 GB according to the
 Each hosted job scans one panel's prepared tables lazily. A solution reads
 only the tables and columns it collects. Solutions that load large histories
 into memory may still need to run locally because the hosted job has limited
-memory.
+memory. The workflow's `ubuntu-latest` runner does not provide a GPU. GitHub
+offers GPU-enabled larger runners for organizations on eligible plans, but this
+repository's workflow is not configured to use one. See GitHub's
+[larger-runner specifications](https://docs.github.com/en/actions/reference/runners/larger-runners)
+if GPU-backed hosted runs become necessary.
 
 The workflow uploads reports, metrics, and a copy of the solution's source
 files. It does not upload predictions made from competition data or the
