@@ -9,6 +9,7 @@ uniqueness checks on disk when files are too large to load together.
 from __future__ import annotations
 
 import itertools
+import logging
 import sqlite3
 import tempfile
 from collections.abc import Iterator, Sequence
@@ -21,6 +22,7 @@ from .contracts import KEYS, VALUES, Task, normalize_lazy, validate_predictions
 
 COLUMNS = ["submission_id", "task", *VALUES["state"], *VALUES["queue"], *VALUES["odme"]]
 CHUNK = 100_000
+logger = logging.getLogger(__name__)
 
 
 def table_file_chunks(table_file_path: FilePath) -> Iterator[pl.DataFrame]:
@@ -170,7 +172,7 @@ def validate_submission(
             database.close()
     if not row_count:
         raise ValueError("Empty submission")
-    print(f"Valid submission: {row_count:,} rows")
+    logger.info("Valid submission: %s rows", f"{row_count:,}")
     return row_count
 
 
@@ -353,4 +355,4 @@ def assemble(
             staged_submission.replace(submission_output_file)
         finally:
             database.close()
-    print(f"Wrote {submission_output_file}")
+    logger.info("Wrote submission: %s", submission_output_file)

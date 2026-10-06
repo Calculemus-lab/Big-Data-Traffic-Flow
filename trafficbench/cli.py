@@ -6,6 +6,7 @@ execution, packaging, or submission work to the corresponding package module.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 from pathlib import Path
@@ -23,6 +24,7 @@ from .contracts import (
 )
 
 app = typer.Typer(help="One command to test a traffic-flow idea.")
+logger = logging.getLogger(__name__)
 # Typer needs inline Literal choices because it does not resolve PEP 695 aliases.
 # Typer needs pathlib.Path for file options. The corresponding package functions
 # use Pydantic FilePath and DirectoryPath where the path kind is fixed.
@@ -131,17 +133,14 @@ def prepare_command(
 
 
 @app.command("new")
-def new_command(
-    solution_name: str, task: Literal["state", "queue", "odme"] = "state"
-) -> None:
-    """Create a solution package exporting the selected predictor function.
+def new_command(solution_name: str) -> None:
+    """Create a solution package with starting predictors for all scored tasks.
 
     The solution name must be a safe Python package name because the runner imports it
-    as ``solutions.<name>``. The generated predictor starts from the baseline.
+    as ``solutions.<name>``. Each generated predictor starts from its baseline.
 
     Args:
         solution_name: Lowercase package name to create under ``solutions``.
-        task: Task function to export from the generated package.
 
     Raises:
         typer.BadParameter: If the name is unsafe or the package already exists.
@@ -161,54 +160,81 @@ def new_command(
         raise typer.BadParameter(f"{solution_directory} already exists")
     solution_directory.mkdir()
     (solution_directory / "__init__.py").write_text(
-        f'"""Expose the {task} predictor to the benchmark runner."""\n\n'
-        f"from .model import {task}\n"
+        '"""Expose all task predictors to the benchmark runner."""\n\n'
+        "from .model import odme, queue, state\n\n"
+        '__all__ = ["odme", "queue", "state"]\n'
     )
-    task_frame_type_name = {
-        "state": "StateFrame",
-        "queue": "QueueFrame",
-        "odme": "OdmeFrame",
-    }[task]
     (solution_directory / "model.py").write_text(
-        f'''"""Implement the {task} approach here. Add helper modules as needed."""
+        '''"""Starting predictors for Tasks 1, 2, and 4.
+
+Each function starts from its matching baseline and can be developed
+independently. Add helper modules as needed.
+"""
+
+from __future__ import annotations
 
 from solutions import baseline
 from trafficbench.contracts import Panel, ReleasePackageSlice, Split
-from trafficbench.table_types import {task_frame_type_name}
+from trafficbench.table_types import OdmeFrame, QueueFrame, StateFrame
 
 
-def {task}(
+def state(
     release_slice: ReleasePackageSlice,
-    target_templates_by_panel_and_split: dict[
-        Panel, dict[Split, {task_frame_type_name}]
-    ],
-) -> dict[Panel, dict[Split, {task_frame_type_name}]]:
-    """Return predictions for the supplied {task} target rows.
-
-    Use the lazy tables selected for this run. Collect only the tables and
-    columns needed by this approach. Preserve each target row and replace its
-    zero-valued prediction column with a value.
+    target_templates_by_panel_and_split: dict[Panel, dict[Split, StateFrame]],
+) -> dict[Panel, dict[Split, StateFrame]]:
+    """Return Task 1 speed and flow predictions for the supplied target rows.
 
     Args:
-        release_slice: Lazy network and release tables, historical train labels,
-            date boundaries, and solution settings.
-        target_templates_by_panel_and_split: Zero-valued Polars LazyFrames,
-            grouped by panel and release split.
+        release_slice: Released inputs, historical labels, network data, and
+            solution settings.
+        target_templates_by_panel_and_split: Zero-filled Task 1 rows to predict.
 
     Returns:
-        Polars LazyFrames containing every requested target row and its prediction,
-        grouped by panel and release split.
+        Task 1 predictions grouped by panel and release split.
     """
-    # Use the baseline predictor as a complete starting implementation.
-    return baseline.{task}(
-        release_slice,
-        target_templates_by_panel_and_split,
-    )
+    return baseline.state(release_slice, target_templates_by_panel_and_split)
+
+
+def queue(
+    release_slice: ReleasePackageSlice,
+    target_templates_by_panel_and_split: dict[Panel, dict[Split, QueueFrame]],
+) -> dict[Panel, dict[Split, QueueFrame]]:
+    """Return Task 2 queue predictions for the supplied target rows.
+
+    Args:
+        release_slice: Released inputs, historical labels, network data, and
+            solution settings.
+        target_templates_by_panel_and_split: Zero-filled Task 2 rows to predict.
+
+    Returns:
+        Queue predictions grouped by panel and release split.
+    """
+    return baseline.queue(release_slice, target_templates_by_panel_and_split)
+
+
+def odme(
+    release_slice: ReleasePackageSlice,
+    target_templates_by_panel_and_split: dict[Panel, dict[Split, OdmeFrame]],
+) -> dict[Panel, dict[Split, OdmeFrame]]:
+    """Return Task 4 path-flow predictions for the supplied target rows.
+
+    Args:
+        release_slice: Released inputs, historical labels, network data, and
+            solution settings.
+        target_templates_by_panel_and_split: Zero-filled Task 4 rows to predict.
+
+    Returns:
+        Path-flow predictions grouped by panel and release split.
+    """
+    return baseline.odme(release_slice, target_templates_by_panel_and_split)
 '''
     )
-    print(
-        f"Created {solution_directory}/. Use bench run {solution_name} --task {task} "
-        "with --target-range validation, private, or both, or with prediction dates."
+    logger.info(
+        "Created %s/ with state, queue, and odme predictors. Use bench run %s "
+        "--task state, queue, or odme with --target-range validation, private, "
+        "or both, or with prediction dates.",
+        solution_directory,
+        solution_name,
     )
 
 
@@ -442,7 +468,7 @@ def summary_command(
         )
     summary_csv_file.parent.mkdir(parents=True, exist_ok=True)
     pl.DataFrame(run_summary_rows).write_csv(summary_csv_file)
-    print(summary_csv_file)
+    logger.info("Wrote run summary: %s", summary_csv_file)
 
 
 @app.command("assemble")
@@ -530,6 +556,7 @@ def fixture_command(
 
 def main() -> None:
     """Run the benchmark command group."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     app()
 
 

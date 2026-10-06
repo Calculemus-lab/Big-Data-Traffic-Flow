@@ -299,25 +299,32 @@ def test_queue_solution_receives_all_windows_in_one_panel_call(
     assert len(calls) == 1
 
 
-def test_new_creates_solution_package(
+def test_new_creates_all_task_predictors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from trafficbench.cli import main
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "solutions").mkdir()
-    monkeypatch.setattr(sys, "argv", ["bench", "new", "new_queue", "--task", "queue"])
+    monkeypatch.setattr(sys, "argv", ["bench", "new", "new_solution"])
     with pytest.raises(SystemExit) as completed:
         main()
     assert completed.value.code == 0
-    path = tmp_path / "solutions/new_queue"
-    assert (path / "__init__.py").read_text().endswith("from .model import queue\n")
+    path = tmp_path / "solutions/new_solution"
+    assert (
+        (path / "__init__.py")
+        .read_text()
+        .endswith('__all__ = ["odme", "queue", "state"]\n')
+    )
     generated_model = (path / "model.py").read_text()
     assert "release_slice: ReleasePackageSlice" in generated_model
     assert "historical_task_labels: HistoricalTaskLabels" not in generated_model
+    assert "StateFrame" in generated_model
     assert "QueueFrame" in generated_model
-    assert ") -> dict[Panel, dict[Split, QueueFrame]]:" in generated_model
-    assert "Polars LazyFrames" in generated_model
+    assert "OdmeFrame" in generated_model
+    assert "return baseline.state(" in generated_model
+    assert "return baseline.queue(" in generated_model
+    assert "return baseline.odme(" in generated_model
     with pytest.raises(SystemExit):
         main()
 

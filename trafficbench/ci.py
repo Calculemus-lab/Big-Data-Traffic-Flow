@@ -7,6 +7,7 @@ recalculates task metrics from their per-case CSV files.
 
 from __future__ import annotations
 
+import logging
 import tarfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -30,6 +31,7 @@ from .metrics import aggregate
 from .runner import report, verify_benchmark
 
 MAX_RELEASE_ASSET_BYTES: Final = 2 * 1024**3
+logger = logging.getLogger(__name__)
 
 
 def package(benchmark_directory: DirectoryPath, package_directory: Path) -> BundleIndex:
@@ -94,9 +96,10 @@ def package(benchmark_directory: DirectoryPath, package_directory: Path) -> Bund
             tasks=tasks,
         )
         bundle_index.shards.append(panel_bundle_shard)
-        print(
-            f"Packed {archive_file_name}: {archive_path.stat().st_size / 1024**2:.1f} MiB",
-            flush=True,
+        logger.info(
+            "Packed %s: %.1f MiB",
+            archive_file_name,
+            archive_path.stat().st_size / 1024**2,
         )
     (package_directory / f"{profile}-index.json").write_text(
         bundle_index.model_dump_json(indent=2)
@@ -387,6 +390,7 @@ def combine_command(
 
 def main() -> None:
     """Run the hosted benchmark commands."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     ci_app()
 
 

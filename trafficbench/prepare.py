@@ -7,6 +7,7 @@ and file hashes so repeated runs can use the same prepared data.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -51,6 +52,8 @@ from .data import (
     validate_experiment_dates,
 )
 from .metrics import link_path_incidence_matrix
+
+logger = logging.getLogger(__name__)
 
 
 class QueueWindow(NamedTuple):
@@ -433,7 +436,7 @@ def prepare(
     benchmark_directory.mkdir(parents=True, exist_ok=True)
 
     for panel in selected_panels:
-        print(f"Preparing {panel} for {case_id}", flush=True)
+        logger.info("Preparing panel %s for %s", panel, case_id)
         network = release.scan_network_tables(panel)
         for network_table_name, network_table in network.items():
             save_table(
@@ -778,8 +781,10 @@ def prepare(
     (benchmark_directory / "manifest.json").write_text(
         manifest.model_dump_json(indent=2, exclude_none=True)
     )
-    print(
-        f"Ready: {benchmark_directory} ({len(manifest.cases)} cases, "
-        f"{manifest.benchmark_id[:12]})"
+    logger.info(
+        "Prepared benchmark: %s (%s cases, ID %s)",
+        benchmark_directory,
+        len(manifest.cases),
+        manifest.benchmark_id[:12],
     )
     return benchmark_directory

@@ -144,8 +144,10 @@ It uses the same solution function and prediction checks for every call.
 
 ## Solution function contract
 
-Create a solution package with `bench new`, then export a function named for
-the task: `state`, `queue`, or `odme`. Each function receives two arguments: a
+Create a solution package with `bench new`. It exports starting implementations
+for `state`, `queue`, and `odme`, each delegating to the corresponding baseline.
+Develop these functions independently; `bench run` and `bench experiment` still
+run only the task selected with `--task`. Each function receives two arguments: a
 [`ReleasePackageSlice`](../trafficbench/contracts.py#L604) and a mapping of
 target templates:
 
@@ -290,6 +292,41 @@ window. The runner rejects a partial window because intersection over union
 Each run writes `predictions.csv`, `metrics.csv`, and `run.json` beneath
 `runs/`. The CSV has validated task rows. The metadata records the selected
 date intervals, panels, target splits, and whether answer values were supplied.
+The command logs the prediction path and any available scores or diagnostics
+at the standard `INFO` level. Log messages go to the error-output stream, so
+the prediction data stays in its CSV file. The metrics are written to
+`metrics.csv`; run metadata and a human-readable report are saved beside it.
+Task 1 predictions for validation or private have no answer-based score unless
+an answer file is supplied, so their displayed values are Task 3 diagnostics
+only.
+
+### Read the local metrics
+
+Trafficbench reports answer-based scores only when it has answer values. The
+column names below appear in `metrics.csv` and in the command output. Identity
+columns such as `task`, `split`, `panel`, `family`, `condition`, and
+`window_id` identify the rows being scored. `n` is a row or cell count, not a
+score.
+
+| Metric | Meaning | How to read it |
+| --- | --- | --- |
+| [`state_score`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction) | Task 1 score calculated separately for each mask regime from speed RMSE and per-lane flow RMSE. | Higher is better. It appears only when answer values are available. |
+| [`speed_rmse`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction) | Root mean square speed error, in km/h. | Lower is better. |
+| [`flow_per_lane_rmse`](COMPETITION_AND_THEORY.md#task-1-traffic-state-reconstruction) | Root mean square error in flow per lane, in vehicles per hour per lane. | Lower is better. |
+| [`queue_proxy_iou`](COMPETITION_AND_THEORY.md#task-2-short-term-queue-forecasting) | Intersection over union for predicted and answer queue cells in one complete forecast window. | Between zero and one, with higher values better. Prepared train cases use proxy labels, so their score is not the official Task 2 score. |
+| [`fd_relative_error_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency) | Sum of absolute differences between predicted flow and fundamental-diagram flow, divided by the sum of absolute predicted flow, across the panel's requested rows. | Lower means closer agreement. This is a local diagnostic, not the official Task 3 score. |
+| [`low_flow_fraction_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency) | Fraction of Task 1 target rows with predicted total flow below 50 vehicles per hour. | Between zero and one. The official Task 3 scorer uses a low-flow cutoff in its FD score, but this summary fraction is not that score. |
+| [`negative_state_fraction_diagnostic`](COMPETITION_AND_THEORY.md#task-3-physical-consistency) | Fraction of Task 1 target rows where predicted speed or flow is negative. | Between zero and one; zero means no negative predictions. |
+| [`odme_link_score_diagnostic`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation) | Fit between observed link counts and counts implied by predicted path flows. | Between zero and one, with higher values indicating better count fit. It does not show whether hidden path flows are correct. |
+| [`odme_prior_relative_movement`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation) | Sum of absolute differences between predicted path flows and weak-prior path flows, divided by the prior's total flow. | Describes how far the estimate moved from the prior. Neither smaller nor larger is always better by itself. |
+| [`odme_synthetic_score`](COMPETITION_AND_THEORY.md#task-4-origin-destination-path-flow-estimation) | Weighted Task 4 score for a generated case with known path-flow answers: 45% path-flow accuracy, 25% link-count fit, 15% prior-deviation score, and 15% destination-attraction score. | Higher is better on those synthetic cases only. It is not a score against the competition's hidden path flows. |
+
+Task 3 diagnostics are calculated from Task 1 predictions even when no Task 1
+answers are available. They do not include vehicle conservation and should not
+be interpreted as the official Task 3 score. Task 4 count-fit diagnostics can
+also appear without path-flow answers because the release provides observed
+link counts. A `bench run` with no `--answers` does not produce Task 1 or Task
+2 answer-based scores.
 
 ## Prepare and score local train cases
 

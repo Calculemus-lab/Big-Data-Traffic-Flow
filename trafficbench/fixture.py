@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from .contracts import (
     ReleasePanel,
 )
 from .data import SplitCalendarEntry, SyntheticReleaseCalendar, save_table
+
+logger = logging.getLogger(__name__)
 
 
 def make_fixture(fixture_release_directory: Path) -> Path:
@@ -260,5 +263,5 @@ def make_fixture(fixture_release_directory: Path) -> Path:
             "count": [2200.0, 1300.0],
         }
     ).write_csv(task4 / "synthetic_link_counts.csv")
-    print(f"Synthetic CI fixture: {fixture_release_directory}")
+    logger.info("Synthetic CI fixture: %s", fixture_release_directory)
     return fixture_release_directory

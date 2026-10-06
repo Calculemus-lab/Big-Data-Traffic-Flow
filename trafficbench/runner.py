@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import json
+import logging
 import platform
 import shutil
 import subprocess
@@ -59,6 +60,8 @@ from .inference import run_solution
 from .metrics import (
     aggregate,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def snapshot_files() -> list[Path]:
@@ -549,7 +552,7 @@ def _save_result(
         run_metadata.model_dump_json(indent=2, exclude_none=True)
     )
     (run_directory / "report.md").write_text(report(run_metadata))
-    print(f"Results: {run_directory}", flush=True)
+    logger.info("Results: %s", run_directory)
 
 
 def _attach_baseline(
@@ -707,7 +710,7 @@ def run_experiment(
         )
     if run_metadata.metrics is None:
         raise RuntimeError("Completed run has no metrics")
-    print(json.dumps(run_metadata.metrics, indent=2))
+    logger.info("Aggregated metrics:\n%s", json.dumps(run_metadata.metrics, indent=2))
     return run_directory
 
 
@@ -757,7 +760,7 @@ def compare(run_directories: Sequence[DirectoryPath]) -> pl.DataFrame:
             {"run": record.run_id, **metrics, "seconds": elapsed_seconds}
         )
     comparison_table = pl.DataFrame(comparison_rows)
-    print(comparison_table)
+    logger.info("Run comparison:\n%s", comparison_table)
     return comparison_table
 
 
@@ -963,9 +966,9 @@ def run_predictions(
         "metrics": solution_result.metrics.to_dicts(),
     }
     (run_directory / "run.json").write_text(json.dumps(run_metadata_payload, indent=2))
-    print(f"Predictions: {prediction_file}", flush=True)
+    logger.info("Predictions: %s", prediction_file)
     if not solution_result.metrics.is_empty():
-        print(solution_result.metrics, flush=True)
+        logger.info("Scores and diagnostics:\n%s", solution_result.metrics)
     return run_directory
 
 
