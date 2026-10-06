@@ -10,7 +10,6 @@ from pathlib import PurePosixPath
 
 BRANCH_PATTERN = re.compile(r"cycle-[0-9]+/CAL-[0-9]+/[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 # Existing setup branches predate the experiment convention.
-LEGACY_BRANCHES = {"CAL-7/setup-repo", "chore/setup-CV"}
 SUBMODULE_ROOTS = {"official_competition_repo"}
 REFERENCE_ROOTS = {"trafficflowbench-public"}
 ARTIFACT_SUFFIXES = {

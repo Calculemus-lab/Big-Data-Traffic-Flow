@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -19,7 +18,7 @@ from .contracts import (
     ReleaseCorridors,
     ReleasePanel,
 )
-from .data import save_table
+from .data import SplitCalendarEntry, SyntheticReleaseCalendar, save_table
 
 
 def make_fixture(fixture_release_directory: Path) -> Path:
@@ -45,11 +44,27 @@ def make_fixture(fixture_release_directory: Path) -> Path:
     upstream_link, downstream_link = "L01", "L02"
     first_path, second_path = "P01", "P02"
 
-    # Preparation discovers panels and their freeway families from this file.
+    # The fixture carries its own calendar, so CI and tests do not depend on
+    # the ignored Kaggle download being present in the checkout.
     (fixture_release_directory / "config").mkdir(parents=True)
-    shutil.copy2(
-        Path(__file__).parents[1] / "kaggle_public/config/synthetic_release_v1.json",
-        fixture_release_directory / "config/synthetic_release_v1.json",
+    synthetic_release_calendar = SyntheticReleaseCalendar(
+        synthetic_calendar={
+            "train": SplitCalendarEntry(
+                start=datetime(2030, 6, 1, tzinfo=UTC),
+                end_exclusive=datetime(2031, 3, 1, tzinfo=UTC),
+            ),
+            "validation": SplitCalendarEntry(
+                start=datetime(2031, 3, 1, tzinfo=UTC),
+                end_exclusive=datetime(2031, 4, 1, tzinfo=UTC),
+            ),
+            "private": SplitCalendarEntry(
+                start=datetime(2031, 4, 1, tzinfo=UTC),
+                end_exclusive=datetime(2031, 5, 1, tzinfo=UTC),
+            ),
+        }
+    )
+    (fixture_release_directory / "config/synthetic_release_v1.json").write_text(
+        synthetic_release_calendar.model_dump_json()
     )
     (fixture_release_directory / "config/corridors.json").write_text(
         ReleaseCorridors(

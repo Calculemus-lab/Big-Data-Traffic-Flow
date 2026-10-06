@@ -5,6 +5,8 @@ Use one branch per experiment. Name branches
 `cycle-1/CAL-2/lightgbm-baseline`. Use lowercase letters, numbers, and hyphens
 in the experiment name.
 
+The CAL number was given to your task on [Linear](https://linear.app/calculemus/project/big-data-traffic-flow-competition-21181673811a/issues).
+
 Each experiment lives on its own branch, so experiment work is generally not
 merged into `main`.
 
