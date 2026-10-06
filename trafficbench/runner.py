@@ -4,7 +4,6 @@ import importlib.metadata
 import json
 import platform
 import random
-import resource
 import shutil
 import subprocess
 import sys
@@ -16,6 +15,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+try:
+    import resource
+except ImportError:  # not available on Windows
+    resource = None
 
 from .contracts import Context, validate_predictions
 from .data import digest, save_table
@@ -155,8 +159,9 @@ def run(solution, task='state', bundle='data/benchmarks/quick', params=None, run
         failure = exc
     finally:
         metadata['seconds'] = time.perf_counter() - started
-        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        metadata['peak_memory_mb'] = rss / (1024**2 if sys.platform == 'darwin' else 1024)
+        if resource:
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            metadata['peak_memory_mb'] = rss / (1024 ** 2 if sys.platform == 'darwin' else 1024)
         pd.DataFrame(rows).to_csv(directory / 'metrics.csv', index=False)
         (directory / 'run.json').write_text(json.dumps(metadata, indent=2))
         (directory / 'report.md').write_text(report(metadata, rows))
