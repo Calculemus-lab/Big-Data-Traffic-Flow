@@ -1,148 +1,238 @@
 """Statistical approach that:
 1) Improves the provided baseline 
 2) On top of that interpolates the same-day residuals
+
+Local experiment:  bench experiment residual_interp --task state --benchmark data/benchmarks/quick
+Tune:              ... --params '{"tau": 20, "flow_mode": "mult"}'
+Release targets:   bench run residual_interp --task state --target-range validation
 """
-import numpy as np
-import pandas as pd
  
-VALUES = ['speed_kmh', 'flow_vph']
-KEYS = ['timestamp', 'station_id', 'link_id']
-SERIES = ['station_id', 'link_id']
-DAY = 288  # 5-minute slots per day
+from __future__ import annotations
  
-DEFAULTS = {
-    # --- baseline profile ---
-    'smooth': 1,             # average over +-k neighbouring slots (1 = 15-min window)
-    'half_life_days': 56,    # weight recent training days more; 0 = equal weights
-    'day_groups': 'dow',     # 'dow' = 7 day types; 'pooled' = Mon-Fri share one profile
-    # --- interpolation ---
-    'tau': 20,                # decay of anchor weight, in 5-min steps (6 = 30 min)
-    'min_pct': 75,           # visible cells with pct_observed >= this are anchors
-    'speed_mode': 'add',     # 'add' or 'mult'
-    'flow_mode': 'mult',     # 'add' or 'mult'
-    'offset': 100.0,         # added before taking ratios, so low values don't explode
-}
+from collections.abc import Mapping
+from functools import partial
+from typing import Literal
  
+import polars as pl
+from pydantic import BaseModel, ConfigDict, Field
  
-def _clean(frame):
-    """Plain numpy dtypes and consistent keys (train arrives as pyarrow-backed)."""
-    out = pd.DataFrame({
-        'timestamp': pd.to_datetime(frame['timestamp'], utc=True).astype('datetime64[ns, UTC]'),
-        'station_id': frame['station_id'].astype(str),
-        'link_id': frame['link_id'].astype(str),
-    })
-    for col in VALUES + ['pct_observed']:
-        if col in frame:
-            out[col] = pd.to_numeric(frame[col], errors='coerce').to_numpy(dtype=float, na_value=np.nan)
-    return out
+from solutions import baseline
+from trafficbench import table_types
+from trafficbench.contracts import (
+    KEYS,
+    QUEUE_INTERVAL_MINUTES,
+    VALUES,
+    Panel,
+    ReleasePackageSlice,
+    Split,
+)
+from trafficbench.panelwise import map_panels
+ 
+SERIES = ["station_id", "link_id"]
+CELL = ["timestamp", "station_id", "link_id"]
+SLOTS_PER_DAY = 24 * 60 // QUEUE_INTERVAL_MINUTES  # 288 five-minute slots
+STEP_SECONDS = QUEUE_INTERVAL_MINUTES * 60
  
  
-def _day_type(ts, mode):
-    dow = ts.dt.dayofweek
-    return dow if mode == 'dow' else pd.Series(np.where(dow >= 5, dow, 0), index=ts.index)
+class Parameters(BaseModel):
+    """Validated settings. Unknown keys are rejected to catch typos in --params.
+ 
+    Attributes:
+        smooth: Average each profile slot with +-k neighbouring slots.
+        half_life_days: Weight of a day halves every this many days (0 = equal).
+        day_groups: "dow" = 7 day types; "pooled" = Mon-Fri share one profile.
+        tau: Decay of an anchor's weight, in 5-minute steps.
+        min_pct: Minimum pct_observed for profile data and anchors.
+        speed_mode, flow_mode: Additive or multiplicative (log-ratio) deviation.
+        offset: Added before ratios in multiplicative mode so low values stay stable.
+    """
+ 
+    model_config = ConfigDict(strict=True, extra="forbid")
+    smooth: int = Field(default=1, ge=0, le=12)
+    half_life_days: float = Field(default=56, ge=0)
+    day_groups: Literal["dow", "pooled"] = "dow"
+    tau: float = Field(default=20, gt=0)
+    min_pct: float = Field(default=75, ge=0, le=100)
+    speed_mode: Literal["add", "mult"] = "add"
+    flow_mode: Literal["add", "mult"] = "mult"
+    offset: float = Field(default=100.0, gt=0)
  
  
-def _slot(ts):
-    return ts.dt.hour * 12 + ts.dt.minute // 5
+def state(
+    release_slice: ReleasePackageSlice,
+    target_templates_by_panel_and_split: dict[
+        Panel, dict[Split, table_types.StateFrame]
+    ],
+) -> dict[Panel, dict[Split, table_types.StateFrame]]:
+    """Predict Task 1 speed and flow as profile + interpolated residual."""
+    p = Parameters.model_validate(dict(release_slice.parameters))
+    return map_panels(
+        release_slice,
+        target_templates_by_panel_and_split,
+        partial(_state_for_panel, p=p),
+    )
  
  
-def fit_profile(train, p):
-    """Weighted, slot-smoothed mean per (station, link, day type, slot)."""
-    tr = train[train.pct_observed.ge(p['min_pct'])].dropna(subset=VALUES).copy()
-    if p['half_life_days'] > 0:
-        age_days = (tr.timestamp.max() - tr.timestamp).dt.total_seconds() / 86400
-        tr['w'] = 0.5 ** (age_days / p['half_life_days'])
+def _state_for_panel(
+    release_slice: ReleasePackageSlice,
+    panel: Panel,
+    target_templates_by_split: Mapping[Split, table_types.StateFrame],
+    *,
+    p: Parameters,
+) -> dict[Split, table_types.StateFrame]:
+    # All published mainline cells for this panel, with known historical
+    # Task 1 answers restored. Masked cells have null speed/flow.
+    observations = baseline.state_observations(release_slice, panel)
+    profile, link_means, panel_means = _fit_profile(observations, p)
+ 
+    # Interpolate on every observed cell once; targets then just look up their row.
+    obs = _add_profile(observations, profile, link_means, panel_means, p).sort(
+        [*SERIES, "timestamp"]
+    )
+    first = obs.select(pl.col("timestamp").min()).item()
+    obs = obs.with_columns(
+        ((pl.col("timestamp") - first).dt.total_seconds() / STEP_SECONDS).alias("step")
+    )
+    obs = obs.with_columns(
+        _interpolate("speed_kmh", p.speed_mode, p).alias("pred_speed_kmh"),
+        _interpolate("flow_vph", p.flow_mode, p).alias("pred_flow_vph"),
+    ).select([*CELL, "pred_speed_kmh", "pred_flow_vph"])
+ 
+    predictions: dict[Split, table_types.StateFrame] = {}
+    for split, template in target_templates_by_split.items():
+        targets = _add_profile(
+            template.select(KEYS["state"]).collect(),
+            profile,
+            link_means,
+            panel_means,
+            p,
+        )
+        predictions[split] = (
+            targets.join(obs, on=CELL, how="left")
+            .with_columns(
+                # Fall back to the profile if a target has no matching observed row.
+                pl.coalesce(f"pred_{v}", f"p_{v}").clip(lower_bound=0).alias(v)
+                for v in VALUES["state"]
+            )
+            .select(KEYS["state"] + VALUES["state"])
+            .lazy()
+        )
+    return predictions
+ 
+ 
+def _day_slot(p: Parameters) -> list[pl.Expr]:
+    weekday = pl.col("timestamp").dt.weekday()  # 1 = Monday ... 7 = Sunday
+    day = (
+        weekday
+        if p.day_groups == "dow"
+        else pl.when(weekday >= 6).then(weekday).otherwise(1)
+    )
+    slot = (
+        pl.col("timestamp").dt.hour().cast(pl.Int32) * (60 // QUEUE_INTERVAL_MINUTES)
+        + pl.col("timestamp").dt.minute().cast(pl.Int32) // QUEUE_INTERVAL_MINUTES
+    )
+    return [day.cast(pl.Int32).alias("day"), slot.alias("slot")]
+ 
+ 
+def _fit_profile(
+    observations: pl.DataFrame, p: Parameters
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Recency-weighted, slot-smoothed mean per (station, link, day type, slot)."""
+    values = list(VALUES["state"])
+    tr = observations.filter(
+        pl.col("pct_observed").ge(p.min_pct)
+        & pl.col("speed_kmh").is_not_null()
+        & pl.col("flow_vph").is_not_null()
+    ).with_columns(_day_slot(p))
+    if p.half_life_days > 0:
+        age_days = (
+            pl.col("timestamp").max() - pl.col("timestamp")
+        ).dt.total_seconds() / 86400
+        tr = tr.with_columns((0.5 ** (age_days / p.half_life_days)).alias("w"))
     else:
-        tr['w'] = 1.0
-    tr['day'] = _day_type(tr.timestamp, p['day_groups'])
-    tr['slot'] = _slot(tr.timestamp)
-    for v in VALUES:
-        tr['w_' + v] = tr.w * tr[v]
-    sums = tr.groupby(SERIES + ['day', 'slot'])[['w'] + ['w_' + v for v in VALUES]].sum()
+        tr = tr.with_columns(pl.lit(1.0).alias("w"))
  
-    # Smooth over neighbouring slots: circular moving sum over the 288 slots.
-    k = int(p['smooth'])
-    smoothed, index = {}, None
-    for col in sums.columns:
-        wide = sums[col].unstack('slot').reindex(columns=range(DAY)).fillna(0.0)
-        index = wide.index
-        arr = wide.to_numpy()
-        smoothed[col] = sum(np.roll(arr, s, axis=1) for s in range(-k, k + 1))
-    profile = {}
-    with np.errstate(invalid='ignore', divide='ignore'):
-        for v in VALUES:
-            ratio = np.where(smoothed['w'] > 0, smoothed['w_' + v] / smoothed['w'], np.nan)
-            profile['p_' + v] = pd.DataFrame(ratio, index=index, columns=pd.Index(range(DAY), name='slot')).stack()
-    profile = pd.DataFrame(profile).reset_index()
- 
-    fallback = {'link': tr.groupby('link_id')[VALUES].mean(), 'global': tr[VALUES].mean()}
-    return profile, fallback
- 
- 
-def add_profile(frame, profile, fallback, p):
-    frame = frame.assign(day=_day_type(frame.timestamp, p['day_groups']).to_numpy(),
-                         slot=_slot(frame.timestamp).to_numpy())
-    out = frame.merge(profile, on=SERIES + ['day', 'slot'], how='left', validate='many_to_one')
-    for v in VALUES:
-        out['p_' + v] = (out['p_' + v]
-                         .fillna(out.link_id.map(fallback['link'][v]))
-                         .fillna(fallback['global'][v]))
-    return out.drop(columns=['day', 'slot'])
+    keys = [*SERIES, "day", "slot"]
+    sums = tr.group_by(keys).agg(
+        pl.col("w").sum().alias("sw"),
+        *[(pl.col("w") * pl.col(v)).sum().alias(f"swv_{v}") for v in values],
+    )
+    # Circular smoothing: each slot also counts its +-k neighbours (23:55 wraps to 00:00).
+    shifted = pl.concat(
+        sums.with_columns(((pl.col("slot") + s) % SLOTS_PER_DAY).alias("slot"))
+        for s in range(-p.smooth, p.smooth + 1)
+    )
+    profile = (
+        shifted.group_by(keys)
+        .agg(pl.all().sum())
+        .select(
+            *keys,
+            *[(pl.col(f"swv_{v}") / pl.col("sw")).alias(f"p_{v}") for v in values],
+        )
+    )
+    link_means = tr.group_by("link_id").agg(
+        pl.col(v).mean().alias(f"link_{v}") for v in values
+    )
+    panel_means = tr.select(pl.col(v).mean().alias(f"panel_{v}") for v in values)
+    return profile, link_means, panel_means
  
  
-def interpolate(obs, value, mode, p):
-    """obs must be sorted by station, link, timestamp and have a 'step' column."""
-    prof, c = obs['p_' + value], float(p['offset'])
-    anchor = obs.pct_observed.ge(p['min_pct']) & obs[value].notna()
+def _add_profile(
+    frame: pl.DataFrame,
+    profile: pl.DataFrame,
+    link_means: pl.DataFrame,
+    panel_means: pl.DataFrame,
+    p: Parameters,
+) -> pl.DataFrame:
+    """Attach the profile value, falling back to link mean, then panel mean."""
+    values = VALUES["state"]
+    return (
+        frame.with_columns(_day_slot(p))
+        .join(profile, on=[*SERIES, "day", "slot"], how="left")
+        .join(link_means, on="link_id", how="left")
+        .join(panel_means, how="cross")
+        .with_columns(
+            pl.coalesce(f"p_{v}", f"link_{v}", f"panel_{v}")
+            .fill_null(0.0)
+            .alias(f"p_{v}")
+            for v in values
+        )
+        .drop(
+            "day",
+            "slot",
+            *[f"link_{v}" for v in values],
+            *[f"panel_{v}" for v in values],
+        )
+    )
  
-    # Residual: additive difference, or log ratio for multiplicative mode.
-    if mode == 'mult':
-        resid = np.log((obs[value].clip(lower=0) + c) / (prof.clip(lower=0) + c))
+ 
+def _interpolate(value: str, mode: str, p: Parameters) -> pl.Expr:
+    """Profile + residual from the nearest anchors before/after on the same series."""
+    prof, obs_value, c = pl.col(f"p_{value}"), pl.col(value), p.offset
+    anchor = pl.col("pct_observed").ge(p.min_pct) & obs_value.is_not_null()
+ 
+    if mode == "mult":
+        resid = (
+            (obs_value.clip(lower_bound=0) + c) / (prof.clip(lower_bound=0) + c)
+        ).log()
     else:
-        resid = obs[value] - prof
-    anchors = pd.DataFrame({'r': resid.where(anchor), 't': obs.step.where(anchor)})
+        resid = obs_value - prof
+    r = pl.when(anchor).then(resid)
+    t = pl.when(anchor).then(pl.col("step"))
  
-    groups = anchors.groupby([obs.station_id, obs.link_id], sort=False)
-    prev, nxt = groups.ffill(), groups.bfill()   # nearest anchor before / after
- 
-    tau = float(p['tau'])
-    w_prev = np.exp(-(obs.step - prev.t) / tau).fillna(0.0)
-    w_next = np.exp(-(nxt.t - obs.step) / tau).fillna(0.0)
+    prev_r, next_r = r.forward_fill().over(SERIES), r.backward_fill().over(SERIES)
+    prev_t, next_t = t.forward_fill().over(SERIES), t.backward_fill().over(SERIES)
+    w_prev = (-(pl.col("step") - prev_t) / p.tau).exp().fill_null(0.0)
+    w_next = (-(next_t - pl.col("step")) / p.tau).exp().fill_null(0.0)
     total = w_prev + w_next
-    blended = (w_prev * prev.r.fillna(0) + w_next * nxt.r.fillna(0)) / total.where(total > 0)
+    blended = (
+        w_prev * prev_r.fill_null(0.0) + w_next * next_r.fill_null(0.0)
+    ) / pl.when(total > 0).then(total)
     # Shrink toward the profile (residual 0) when the nearest anchor is far away.
-    r_hat = (blended * np.maximum(w_prev, w_next)).fillna(0.0)
+    r_hat = (blended * pl.max_horizontal(w_prev, w_next)).fill_null(0.0)
  
-    if mode == 'mult':
-        pred = (prof.clip(lower=0) + c) * np.exp(r_hat.clip(-1.6, 1.6)) - c
+    if mode == "mult":
+        pred = (prof.clip(lower_bound=0) + c) * r_hat.clip(-1.6, 1.6).exp() - c
     else:
         pred = prof + r_hat
-    return pred.clip(lower=0)
- 
- 
-def state(ctx):
-    p = {**DEFAULTS, **ctx.params}
-    for key in ['speed_mode', 'flow_mode']:
-        if p[key] not in ('add', 'mult'):
-            raise ValueError(f'{key} must be "add" or "mult"')
-    if p['tau'] <= 0:
-        raise ValueError('tau must be positive')
- 
-    profile, fallback = fit_profile(_clean(ctx.train), p)
- 
-    # All evaluation-period cells: visible ones are anchors, blanked ones get predictions.
-    obs = add_profile(_clean(ctx.observations), profile, fallback, p)
-    obs = obs.sort_values(SERIES + ['timestamp'], ignore_index=True)
-    obs['step'] = (obs.timestamp - obs.timestamp.min()).dt.total_seconds() // 300
-    obs['pred_speed_kmh'] = interpolate(obs, 'speed_kmh', p['speed_mode'], p)
-    obs['pred_flow_vph'] = interpolate(obs, 'flow_vph', p['flow_mode'], p)
- 
-    # Predict exactly the target rows; fall back to the profile if a key is not in obs.
-    targets = add_profile(_clean(ctx.targets), profile, fallback, p)
-    merged = targets[KEYS + ['p_' + v for v in VALUES]].merge(
-        obs[KEYS + ['pred_' + v for v in VALUES]], on=KEYS, how='left', validate='one_to_one')
- 
-    out = ctx.targets.copy()
-    for v in VALUES:
-        out[v] = merged['pred_' + v].fillna(merged['p_' + v]).clip(lower=0).to_numpy()
-    return out
+    return pred.clip(lower_bound=0)
