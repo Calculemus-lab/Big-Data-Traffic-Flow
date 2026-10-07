@@ -18,6 +18,7 @@ from trafficbench.contracts import (
     QUEUE_INTERVAL_MINUTES,
     VALUES,
     HistoricalTaskLabels,
+    JsonObject,
     Panel,
     ReleasePackageSlice,
     Split,
@@ -206,6 +207,7 @@ def test_solution_call_batches_selected_panels(
     def predict_all_panels(
         visible_slice: ReleasePackageSlice,
         requested_targets: dict[Panel, dict[Split, table_types.QueueFrame]],
+        _solution_parameters: JsonObject,
     ) -> dict[Panel, dict[Split, table_types.QueueFrame]]:
         """Return zero-valued predictions for every requested panel and split."""
         nonlocal solution_calls
@@ -243,6 +245,7 @@ def test_queue_solution_receives_all_windows_in_one_panel_call(
     def inspect_queue(
         release_slice: ReleasePackageSlice,
         targets: dict[Panel, dict[Split, table_types.QueueFrame]],
+        solution_parameters: JsonObject,
     ) -> dict[Panel, dict[Split, table_types.QueueFrame]]:
         """Check window histories for each panel before delegating."""
         assert len(release_slice.panel_slices_by_panel) == len(targets) == 1
@@ -286,7 +289,7 @@ def test_queue_solution_receives_all_windows_in_one_panel_call(
             ).row(0) == (True, True)
             assert panel_data.link_counts["train"].select(pl.len()).collect().item() > 0
             assert panel_data.weak_prior["train"].select(pl.len()).collect().item() > 0
-        return original_queue(release_slice, targets)
+        return original_queue(release_slice, targets, solution_parameters)
 
     monkeypatch.setattr(baseline, "queue", inspect_queue)
     run_experiment(

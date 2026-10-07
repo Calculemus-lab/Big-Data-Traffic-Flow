@@ -12,6 +12,7 @@ from trafficbench import table_types
 from trafficbench.contracts import (
     LWR_MAINLINE_TOPOLOGY_FILE_STEM,
     QUEUE_FORECAST_STEPS,
+    JsonObject,
     NetworkTables,
     Panel,
     ReleasePackageSlice,
@@ -72,6 +73,7 @@ def test_queue_scores_each_complete_six_step_window_before_averaging(
     def predict_two_windows(
         _release_slice: ReleasePackageSlice,
         requested_targets: dict[Panel, dict[Split, table_types.QueueFrame]],
+        _solution_parameters: JsonObject,
     ) -> dict[Panel, dict[Split, table_types.QueueFrame]]:
         """Predict both test windows while intentionally missing one window."""
         panel_targets = requested_targets[panel]["train"]

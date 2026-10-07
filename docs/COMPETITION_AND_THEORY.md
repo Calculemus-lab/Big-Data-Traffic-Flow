@@ -158,8 +158,8 @@ that does not collect Task 4 tables does not read them into memory. The
 how local cases are prepared.
 
 The slice also carries a `source_fingerprint` that identifies the release
-files, a `parameters` mapping for solution settings, and a `seed` that makes
-randomized choices repeatable.
+files and a `seed` that makes randomized choices repeatable. Solution settings
+are passed separately as the third argument to each task function.
 
 ## Task 1: traffic-state reconstruction
 

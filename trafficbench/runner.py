@@ -397,7 +397,6 @@ def _execute_cases(
             prediction_end_date=first_case.prediction_end_date,
             panel_slices_by_panel=panel_slices,
             source_fingerprint=manifest.data_fingerprint,
-            parameters=solution_parameters.copy(),
             seed=int(metadata_hash([manifest.seed, task, group_name])[:8], 16),
         )
         train_split: Split = "train"

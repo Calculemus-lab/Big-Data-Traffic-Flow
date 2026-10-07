@@ -146,15 +146,16 @@ It uses the same solution function and prediction checks for every call.
 
 ## Solution function contract
 
-Create a solution package with `bench new`. It exports starting implementations
+Create a solution package with `bench new {solution_name}`. It exports starting implementations
 for `state`, `queue`, and `odme`, each delegating to the corresponding baseline.
 Develop these functions independently; `bench run` and `bench experiment` still
-run only the task selected with `--task`. Each function receives two arguments: a
-[`ReleasePackageSlice`](../trafficbench/contracts.py#L604) and a mapping of
-target templates:
+run only the task selected with `--task`. Each function receives three
+arguments: a [`ReleasePackageSlice`](../trafficbench/contracts.py#L604), a
+mapping of target templates, and a JSON object containing solution-specific
+settings:
 
 ```python
-from trafficbench.contracts import Panel, ReleasePackageSlice, Split
+from trafficbench.contracts import JsonObject, Panel, ReleasePackageSlice, Split
 from trafficbench.table_types import StateFrame
 
 
@@ -163,6 +164,7 @@ def state(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, StateFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, StateFrame]]:
     ...
 ```
@@ -196,11 +198,12 @@ Pyright does not use those schemas to verify Polars column expressions such as
 ## Pass settings to a solution
 
 `bench run` and `bench experiment` accept solution settings as a JSON object
-through `--params`. Trafficbench stores that object in
-`release_slice.parameters`; it does not add another function argument. Each
-solution can read and validate the settings it uses. The option defaults to an
-empty object, `{}`. For example, the state example reads a `blend` setting and
-the baseline ODME solution reads a `regularization` setting:
+through `--params` and pass it as the third argument to the selected solution
+function. The `ReleasePackageSlice` contains released data and historical
+labels, not solution settings. Each solution can define and validate the
+settings it uses. The option defaults to an empty object, `{}`. For example,
+the state example reads a `blend` setting and the baseline ODME solution reads
+a `regularization` setting:
 
 ```sh
 uv run bench run example --task state --target-range validation \

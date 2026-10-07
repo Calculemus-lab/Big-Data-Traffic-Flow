@@ -35,6 +35,23 @@ each row. You do not need to read it before writing a solution.
 - [Dependencies](docs/DEPENDENCIES.md)
 - [Saved results](results/README.md)
 
+## Run development checks
+
+Run these commands from the repository root. They match the checks used in CI:
+
+```sh
+uv run --locked pyright
+uv run --locked ruff check
+uv run --locked ruff format --check
+uv run --locked python -m pytest -q
+```
+
+To apply Ruff formatting instead of checking it, run:
+
+```sh
+uv run --locked ruff format
+```
+
 The [official competition repository](official_competition_repo/README.md)
 contains organizer schemas, scorers, and baselines. It is pinned as a Git
 submodule. After cloning this repository, initialize it with:
