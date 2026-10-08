@@ -1,12 +1,13 @@
 # Results
 
-Keep persistent experiment outputs in `results/` on that experiment's branch.
-This includes graphs, CSVs, out-of-fold and test predictions, and model
-weights. Record prediction paths and run details in
-`experiments/experiment_log.csv`.
+Keep research outputs that should remain with an experiment branch in
+`results/`. Examples include graphs, selected prediction files, model weights,
+and assets needed to reproduce a result. Record the run settings and the data
+used with each saved result.
 
-Save out-of-fold and test predictions for each experiment, along with the
-configuration or notes needed to reproduce them. Use the `oof_path` and
-`test_path` fields in the experiment log for their locations.
+Trafficbench keeps the complete record for new runs under `runs/`. See the
+[experiment records guide](../docs/EXPERIMENTS.md) for how to compare and keep
+those runs. The older [`experiment_log.csv`](../experiments/experiment_log.csv)
+contains historical entries. New experiments do not need to update it.
 
-Use `temp/` directories for disposable intermediate files instead.
+Use `temp/` directories for disposable intermediate files.
