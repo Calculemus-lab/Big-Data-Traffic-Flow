@@ -253,7 +253,7 @@ class Release:
             )
         self.release_directory = release_directory
         self.file_names = sorted(
-            str(file_path.relative_to(release_directory))
+            file_path.relative_to(release_directory).as_posix()
             for file_path in release_directory.rglob("*")
             if file_path.is_file()
         )

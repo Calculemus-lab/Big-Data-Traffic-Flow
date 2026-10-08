@@ -88,7 +88,7 @@ def add_split_inputs(
         )
         target_file_path.parent.mkdir(parents=True, exist_ok=True)
         include_header = not target_file_path.exists()
-        with target_file_path.open("a" if not include_header else "w") as output_file:
+        with target_file_path.open("ab" if not include_header else "wb") as output_file:
             shifted_targets.write_csv(output_file, include_header=include_header)
 
 

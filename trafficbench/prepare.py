@@ -774,7 +774,9 @@ def prepare(
 
     # Hash every stored table so later experiments use the exact prepared data.
     manifest.files = {
-        str(parquet_path.relative_to(benchmark_directory)): file_hash(parquet_path)
+        parquet_path.relative_to(benchmark_directory).as_posix(): file_hash(
+            parquet_path
+        )
         for parquet_path in sorted(benchmark_directory.rglob("*.parquet"))
     }
     manifest.benchmark_id = metadata_hash(manifest.hash_content())

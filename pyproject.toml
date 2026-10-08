@@ -16,7 +16,7 @@ dependencies = [
     "typer>=0.20,<1",
     "polars>=1.37,<2",
     "torch>=2.14.1",
-
+    "tzdata>=2026.5",
 ]
 
 [dependency-groups]
