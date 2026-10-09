@@ -1,78 +1,64 @@
 # Competition and traffic theory
 
-TrafficFlowBench is a competition for predicting traffic conditions on
-synthetic freeway networks. Its tasks use related traffic data but ask for
-different outputs and evaluate different parts of a solution. This guide
-explains the tasks, the data available for each one, and the scoring rules.
+TrafficFlowBench evaluates predictions of traffic conditions on synthetic
+freeway networks. Participants use released measurements, road-network
+attributes, and task templates to make predictions. The competition evaluates
+four tasks and accepts one combined comma-separated values (CSV) submission.
 
-The [release package reference](RELEASE_PACKAGE_REFERENCE.md) documents the
-original downloaded files and their columns. **Trafficbench** is this
-repository's local runner for calling solution functions and assembling their
-prediction files. The [Trafficbench guide](TRAFFICBENCH.md) explains that
-interface and its commands.
+This guide starts with the competition format, then defines the road network
+and data before explaining the inputs, tasks, and scores. The
+[release package reference](RELEASE_PACKAGE_REFERENCE.md) is a lookup for the
+downloaded files and their columns. This repository's local solution interface
+is described in the [Trafficbench guide](TRAFFICBENCH.md).
 
 ## Competition at a glance
 
-The public release contains synthetic records at five-minute intervals for
-ten directional freeway panels, grouped into five freeway families. Its
-traffic generator was calibrated using real detector data. The release divides
-dates into three data splits:
+The public release contains eleven months of synthetic traffic records at
+five-minute intervals. The generator was calibrated using real detector data.
+Each task asks for a different output:
 
-| Split | Dates, start included and end excluded | Purpose | Mainline information available through Trafficbench |
-| --- | --- | --- | --- |
-| `train` | 2030-06-01 to 2031-03-01 | Model development and local cases | Masked measurements and selected labels from an earlier train interval. |
-| `validation` | 2031-03-01 to 2031-04-01 | Public leaderboard | Masked measurements. Answers for these dates are withheld. |
-| `private` | 2031-04-01 to 2031-05-01 | Final ranking | Masked measurements. Answers for these dates are withheld. |
+| Task | Prediction or evaluation |
+| --- | --- |
+| 1. Traffic-state reconstruction | Speed and total flow for masked mainline measurements. |
+| 2. Queue forecasting | Queued or clear status for each mainline link at six future times in a forecast window. |
+| 3. Physical consistency | A score computed from the Task 1 speed and flow predictions. |
+| 4. Origin-destination matrix estimation (ODME) | Nonnegative flow for each candidate route in a traffic scenario. |
 
-The downloaded archive also contains unmasked mainline measurements for
-`train`. Trafficbench does not pass that full table to solution functions. It
-passes the published masked view as input and provides selected historical
-Task 1 answers and locally derived Task 2 labels in
-`historical_task_labels`. This makes those labels available without passing
-the unmasked measurement table to a solution. The split boundaries come from
-the release configuration and use Coordinated Universal Time (UTC).
+The submission contains prediction rows for Tasks 1, 2, and 4. Task 3 has no
+separate prediction rows: the evaluator calculates its score from the Task 1
+values. The public leaderboard evaluates the validation period; the final
+ranking uses the private period. The date table below defines those periods.
 
-Validation and private are separate generated months with different demand
-draws and incident schedules. A strong train score does not guarantee transfer
-to either month, and validation performance does not guarantee a private
-ranking. The public leaderboard uses validation, and the private leaderboard
-determines the final competition ranking. Exact split dates are listed in the
-[release package reference](RELEASE_PACKAGE_REFERENCE.md#panels-and-date-splits).
+## Road networks, panels, and traffic measurements
 
-| Task                           | Prediction or score                                |
-| ------------------------------ | -------------------------------------------------- |
-| 1. State reconstruction        | Mainline speed and total flow at masked targets    |
-| 2. Queue forecasting           | Queued or clear state per link at six future times |
-| 3. Physical consistency        | Physics score calculated from Task 1 predictions   |
-| 4. Origin-destination path-flow estimation (ODME) | Nonnegative traffic flow on each candidate path |
+A road network can be represented as a directed graph. An intersection or
+network boundary is a **node**. A one-way road segment between two nodes is a
+**directed link**. The freeway's **mainline** is its ordered sequence of
+freeway links. On-ramps add traffic to the mainline; off-ramps remove traffic.
 
-The total score is
+A **panel** is one directional freeway network. A **freeway family** groups
+the two panels for the same freeway in the same district. The family ID gives
+the district and freeway; the panel ID adds a direction suffix. The ten panels
+in the public release are:
 
-$$
-S_{\text{total}}=
-0.35S_{\text{state}}+
-0.30S_{\text{queue}}+
-0.15S_{\text{physics}}+
-0.20S_{\text{ODME}}.
-$$
+| Freeway family | Freeway | Directional panels |
+| --- | --- | --- |
+| `D7_I10` | District 7, I-10 | `D7_I10_E` eastbound; `D7_I10_W` westbound |
+| `D7_I210` | District 7, I-210 | `D7_I210_E` eastbound; `D7_I210_W` westbound |
+| `D7_I405` | District 7, I-405 | `D7_I405_N` northbound; `D7_I405_S` southbound |
+| `D12_I5` | District 12, I-5 | `D12_I5_N` northbound; `D12_I5_S` southbound |
+| `D12_I405` | District 12, I-405 | `D12_I405_N` northbound; `D12_I405_S` southbound |
 
-Within each freeway family, the evaluator averages scores from the included
-directions. It then gives each family equal weight. Task 2 has targets in four
-families because both `D12_I405` panels are excluded. The other tasks cover
-all five families. If a required task output is missing, that task contributes
-zero. Task 3 has no separate prediction rows because it evaluates the Task 1
-values. The organizers'
-[task connection and suggested order](../official_competition_repo/README.md#how-the-tasks-connect)
-explains why they recommend starting with Task 1.
+The evaluator scores a panel and combines the two directional panel scores
+within each freeway family. It then gives the five families equal weight. Task
+2 has no windows for `D12_I405_N` or `D12_I405_S`; those panels remain in the
+other three tasks. The
+[release package reference](RELEASE_PACKAGE_REFERENCE.md#panels-and-date-splits)
+lists the same panel identifiers with their release files.
 
-## Traffic fundamentals
-
-### Panels, links, and detectors
-
-A **Panel** is one directional freeway network. Its mainline is a sequence of
-directed road links. On-ramps add traffic to the mainline, and off-ramps remove
-traffic. A detector station measures one location on a link. Several stations
-can measure the same link.
+A **detector station** measures traffic at one location on a link. A link may
+have several detector stations, and station measurements may contain gaps.
+Each record describes one five-minute interval.
 
 For one link, speed $v$ is measured in kilometres per hour, total flow $F$ in
 vehicles per hour across all lanes, and lane count $n$ in lanes. Per-lane flow
@@ -80,86 +66,90 @@ $q$ and per-lane density $k$ are
 
 $$
 q=\frac{F}{n},\qquad
-k=\frac{q}{v}=\frac{F}{nv}.
+k=\frac{q}{v}=\frac{F}{nv},\quad v>0.
 $$
 
-The identity $q=kv$ relates these quantities. Total density across all lanes
-is $K=nk=F/v$. For a link of length $L$ kilometres, its accumulation $N$ is the
-number of vehicles on the link:
+The traffic-flow identity $q=kv$ relates per-lane flow and density. Total
+density across all lanes is $K=nk=F/v$. For a link of length $L$ kilometres,
+the accumulation $N$ is the number of vehicles on that link:
 
 $$
 N=KL=\frac{F}{v}L.
 $$
 
 For example, a three-lane link with 3,600 vehicles per hour and a speed of
-80 km/h has a per-lane flow of 1,200 vehicles per hour per lane and a per-lane
-density of 15 vehicles per kilometre per lane.
+80 km/h has a per-lane flow of 1,200 vehicles per hour per lane and a
+per-lane density of 15 vehicles per kilometre per lane.
+
+## The synthetic release and its date splits
+
+The public archive contains eleven months of synthetic traffic at
+five-minute intervals. The archive includes unmasked and masked mainline
+measurements for `train`. Validation and private contain masked mainline
+measurements; their answer values are withheld from participants. Every date
+uses Coordinated Universal Time (UTC). Each date interval includes its start
+and excludes its end:
+
+| Split | Start, included | End, excluded | Purpose and published mainline data |
+| --- | --- | --- | --- |
+| `train` | `2030-06-01` | `2031-03-01` | Model development and local cases. The archive contains masked and unmasked measurements. |
+| `validation` | `2031-03-01` | `2031-04-01` | Public leaderboard. The archive contains masked measurements; answers are withheld. |
+| `private` | `2031-04-01` | `2031-05-01` | Final evaluation. The archive contains masked measurements; answers are withheld. |
+
+The archive contains complete unmasked mainline measurements for `train`, but
+solution functions do not receive that raw table. Validation and private are
+separate generated months with different demand draws and incident schedules.
+A strong training result can therefore fail to transfer, and a validation
+score cannot guarantee a private result.
 
 ## What a solution receives
 
-Every local task function receives the same **Release Slice**
-([`ReleasePackageSlice`](../trafficbench/contracts.py#L604)) and target
-templates grouped by panel and split. Each function returns predictions in the
-same panel-then-split layout.
+Kaggle publishes input files and target templates. A **target template** lists
+the rows a prediction must fill and has placeholders in its prediction
+columns. The competition submission is a combined CSV made from the Task 1,
+Task 2, and Task 4 prediction rows. It does not call a Python function.
 
-The release slice records four dates. `history_start_date` begins the visible
-inputs and historical labels. `history_end_date` ends the historical labels.
-`prediction_start_date` and `prediction_end_date` bound the requested targets.
-The history interval must fall inside `train`. Every interval includes its
-start and excludes its end. Dated input tables cover
-`[history_start_date, prediction_end_date)`, so released observations between
-the historical labels and the targets remain available as input data.
-
-Its `panel_slices_by_panel` field contains one
-[`PanelReleaseSlice`](../trafficbench/contracts.py#L566) for each selected
-panel. Each panel slice also has a `family_id` for score aggregation. It groups
-static network tables together and stores dated tables in maps keyed by split.
-In code, for example, a solution can read
-`release_slice.panel_slices_by_panel[panel].masked_mainline_states[split]`.
-
-| Release Slice field | What the table contains | Published file schema |
-| --- | --- | --- |
-| `network.links` | Mainline link lengths, lane counts, free-flow speeds, and capacities. | [Mainline link attributes](RELEASE_PACKAGE_REFERENCE.md#mainline-link-attributes) |
-| `network.fd_parameters` | Link attributes and critical and jam densities for the fundamental diagram. | [Fundamental-diagram parameters](RELEASE_PACKAGE_REFERENCE.md#fundamental-diagram-parameters) |
-| `network.lwr_mainline_topology` | Mainline link connections and boundary links used for vehicle conservation. | [Mainline connectivity](RELEASE_PACKAGE_REFERENCE.md#mainline-connectivity) |
-| `network.ramp_attachment_map`, `network.synthetic_ramp_attachment_map` | The mainline link associated with each ramp ID. | [Ramp attachment maps](RELEASE_PACKAGE_REFERENCE.md#ramp-attachment-map) and [synthetic ramp attachment map](RELEASE_PACKAGE_REFERENCE.md#synthetic-ramp-attachment-map) |
-| `network.path_set`, `network.path_link_incidence` | Candidate paths and the mainline links each path uses. | [Candidate path set](RELEASE_PACKAGE_REFERENCE.md#candidate-path-set) and [path-link incidence](RELEASE_PACKAGE_REFERENCE.md#path-link-incidence) |
-| `network.additional_network_tables` | Any other network CSV tables, keyed by their file name without the `.csv` suffix. | Listed in the [static network tables](RELEASE_PACKAGE_REFERENCE.md#static-network-tables) section. |
-| `masked_mainline_states[split]` | Published mainline measurements, including the masked train view. | [Mainline state records](RELEASE_PACKAGE_REFERENCE.md#mainline-state-records) |
-| `ramp_states[split]` | Published ramp measurements for the visible dates. | [Ramp state records](RELEASE_PACKAGE_REFERENCE.md#ramp-state-records) |
-| `queue_history[split]`, `queue_window_index[split]` | Released Task 2 history measurements and the times and conditions of forecast windows. | [Queue-window metadata](RELEASE_PACKAGE_REFERENCE.md#task-2-queue-window-metadata) and [queue-window history](RELEASE_PACKAGE_REFERENCE.md#task-2-queue-window-history) |
-| `link_counts[split]`, `weak_prior[split]` | Observed mainline counts and starting path-flow estimates for each Task 4 scenario. These scenarios are keyed by split, not by date. | [Link-count scenario](RELEASE_PACKAGE_REFERENCE.md#task-4-link-count-scenario) and [weak-prior scenario](RELEASE_PACKAGE_REFERENCE.md#task-4-weak-prior-scenario) |
-| [`historical_task_labels.task1_state_answers`](../trafficbench/contracts.py#L562) | Released Task 1 speed and flow values for eligible historical target rows. | [Task 1 state target template](RELEASE_PACKAGE_REFERENCE.md#task-1-state-target-template) |
-| [`historical_task_labels.task2_queue_proxy_labels`](../trafficbench/contracts.py#L563) | Local queue labels calculated from historical train speeds because official Task 2 answers are not released. | Columns match the [queue target template](RELEASE_PACKAGE_REFERENCE.md#task-2-queue-target-template). These labels are local estimates, not official answers. |
-
-The linked release schemas describe columns in files on disk. Trafficbench groups
-dated tables by panel and split and reads timestamps as Coordinated Universal
-Time (UTC) datetimes. The in-memory [`StateFrame`](../trafficbench/table_types.py#L260),
-[`QueueFrame`](../trafficbench/table_types.py#L277), and
-[`OdmeFrame`](../trafficbench/table_types.py#L296) types document the columns
-available in each task table. Their usage is shown in the
+For local development, this repository groups selected published inputs into
+a **Release Slice**: static network tables, dated traffic records, and any
+historical labels available for the selected panels and dates. Trafficbench
+calls one Python function for each task with separate prediction rows (Tasks
+1, 2, and 4). Each function receives the Release Slice, the target template
+rows it must fill, and solution-specific settings. It returns predictions
+for those same rows. Task 3 is calculated from the returned Task 1 values.
+The exact function signature and prediction checks are in the
 [Trafficbench function contract](TRAFFICBENCH.md#solution-function-contract).
 
-The second argument is named `target_templates_by_panel_and_split`. It contains
-the rows to predict, with fields that identify each row and zero placeholders
-in the prediction columns. Its shape is `panel -> split -> table`, matching
-the prediction mapping returned by the function.
+When local answer values exist, Trafficbench keeps them in an **answer
+table** outside the function arguments. After the function returns, the runner
+compares predictions with the answer table. The function can see target row
+identifiers and zero placeholders, but never the requested answer values.
+Historical labels are separate from those requested answers.
 
-For requested target rows, the solution receives the row identifiers and zero
-placeholders, while the runner keeps the true answer values for scoring. The
-separate `historical_task_labels` field contains earlier Task 1 answers and
-locally calculated Task 2 labels. No unmasked mainline table or historical
-Task 4 path-flow answers are passed to a solution.
+Each Release Slice has one panel record for every selected directional
+network. Static network tables are grouped together; dated tables are grouped
+by panel and split. A solution can read the tables needed for its task:
 
-All three functions receive this same set of panel data. A solution can choose
-which tables to read. Tables are Polars `LazyFrame` query plans, so a function
-that does not collect Task 4 tables does not read them into memory. The
-[Trafficbench guide](TRAFFICBENCH.md) describes the command-line workflow and
-how local cases are prepared.
+| Release Slice field | Information available to a solution | Published file schema |
+| --- | --- | --- |
+| `network.links` | Mainline link lengths, lane counts, free-flow speeds, and capacities. | [Mainline link attributes](RELEASE_PACKAGE_REFERENCE.md#mainline-link-attributes) |
+| `network.fd_parameters` | Link attributes and critical and jam densities used by the fundamental diagram, which describes feasible flow at each density. | [Fundamental-diagram parameters](RELEASE_PACKAGE_REFERENCE.md#fundamental-diagram-parameters) |
+| `network.lwr_mainline_topology` | Mainline link connections and boundary links used for vehicle conservation. | [Mainline connectivity](RELEASE_PACKAGE_REFERENCE.md#mainline-connectivity) |
+| `network.ramp_attachment_map`, `network.synthetic_ramp_attachment_map` | The mainline link associated with each ramp identifier. | [Ramp attachment maps](RELEASE_PACKAGE_REFERENCE.md#ramp-attachment-map) and [synthetic ramp attachment map](RELEASE_PACKAGE_REFERENCE.md#synthetic-ramp-attachment-map) |
+| `network.path_set`, `network.path_link_incidence` | Candidate routes and the mainline links each route uses. | [Candidate path set](RELEASE_PACKAGE_REFERENCE.md#candidate-path-set) and [path-link incidence](RELEASE_PACKAGE_REFERENCE.md#path-link-incidence) |
+| `network.additional_network_tables` | Other static network tables, keyed by their filename without `.csv`. | Listed in [static network tables](RELEASE_PACKAGE_REFERENCE.md#static-network-tables). |
+| `masked_mainline_states[split]` | Published mainline measurements, including the masked train view. | [Mainline state records](RELEASE_PACKAGE_REFERENCE.md#mainline-state-records) |
+| `ramp_states[split]` | Published ramp measurements for visible dates. | [Ramp state records](RELEASE_PACKAGE_REFERENCE.md#ramp-state-records) |
+| `queue_history[split]`, `queue_window_index[split]` | Task 2 history measurements, forecast times, and window conditions. | [Queue-window metadata](RELEASE_PACKAGE_REFERENCE.md#task-2-queue-window-metadata) and [queue-window history](RELEASE_PACKAGE_REFERENCE.md#task-2-queue-window-history) |
+| `link_counts[split]`, `weak_prior[split]` | Observed mainline counts and starting path-flow estimates for each Task 4 scenario. These scenarios are keyed by split, not by date. | [Link-count scenario](RELEASE_PACKAGE_REFERENCE.md#task-4-link-count-scenario) and [weak-prior scenario](RELEASE_PACKAGE_REFERENCE.md#task-4-weak-prior-scenario) |
+| `historical_task_labels.task1_state_answers` | Released Task 1 speed and flow values for eligible historical target rows. | [Task 1 state target template](RELEASE_PACKAGE_REFERENCE.md#task-1-state-target-template) |
+| `historical_task_labels.task2_queue_proxy_labels` | Local queue labels calculated from historical train speeds because official Task 2 answers are not released. | Columns match the [queue target template](RELEASE_PACKAGE_REFERENCE.md#task-2-queue-target-template). These are estimates, not official answers. |
 
-The slice also carries a `source_fingerprint` that identifies the release
-files and a `seed` that makes randomized choices repeatable. Solution settings
-are passed separately as the third argument to each task function.
+The field names above belong to this repository's local Python interface. The
+downloaded files use their published column names. Trafficbench converts
+timestamp columns to UTC datetimes and groups dated data by panel and split.
+The [release package reference](RELEASE_PACKAGE_REFERENCE.md) documents the
+on-disk files; [Data passed to the solution](TRAFFICBENCH.md#data-passed-to-the-solution)
+documents the in-memory tables.
 
 ## Task 1: traffic-state reconstruction
 
@@ -173,8 +163,8 @@ The release applies its masks before participants receive the data. A null
 measurement does not by itself mean that the cell is a Task 1 target. Some nulls
 are natural detector gaps, and additional measurements are hidden around Task 2
 forecast windows. The Task 1 target rows identify which cells are scored. A
-cell is eligible for scoring when all required measurements are present and
-detector coverage is at least 75%.
+cell is eligible for scoring when both required measurements, speed and total
+flow, are present and detector coverage is at least 75%.
 
 Each date is assigned one mask regime, which sets the share of eligible speed
 and flow cells that are hidden:
@@ -246,9 +236,11 @@ is queued at two or more history timestamps. Each included panel and split
 has five windows of each condition.
 `D12_I405_N` and `D12_I405_S` have no Task 2 windows.
 
-The evaluator calculates space-time intersection over union (IoU) separately
-for every window. It then averages window scores within each condition and
-gives both conditions equal weight:
+The evaluator calculates space-time intersection over union (IoU) for each
+window. IoU is the number of link-time cells predicted and truly queued divided
+by the number of cells queued in either the prediction or the answer. It
+averages window scores within each condition and gives both conditions equal
+weight:
 
 $$
 \operatorname{IoU}(w)=
@@ -271,11 +263,11 @@ Task 3 scores the physical consistency of the Task 1 speed and flow
 predictions. It has no separate target table or prediction function. The
 evaluator checks a **Fundamental Diagram (FD)** and whether vehicle
 conservation follows the Lighthill-Whitham-Richards (LWR) equation.
-The local diagnostic uses the Task 1 predictions together with network FD
-parameters, mainline topology, and ramp observations. The relevant published
-tables are the [FD parameters](RELEASE_PACKAGE_REFERENCE.md#fundamental-diagram-parameters),
-[mainline connectivity](RELEASE_PACKAGE_REFERENCE.md#mainline-connectivity),
-and [ramp state records](RELEASE_PACKAGE_REFERENCE.md#ramp-state-records).
+Trafficbench reports local diagnostics for Task 1 predictions using the
+network's fundamental-diagram parameters. These diagnostics measure flow
+mismatch, low-flow predictions, and negative values. They do not calculate
+vehicle conservation or the full official Task 3 score. The relevant published
+values are in the [fundamental-diagram parameter table](RELEASE_PACKAGE_REFERENCE.md#fundamental-diagram-parameters).
 
 ### Fundamental diagram
 
@@ -307,7 +299,14 @@ then compares the submitted per-lane flow with the FD flow at that density.
 The FD score is zero if more than 20% of a panel-regime's target cells have
 submitted total flow below 50 vehicles per hour. Otherwise, it is one minus
 the normalized absolute difference between submitted per-lane flow and FD
-flow. Let $F_{\text{net}}=F_{\text{in}}+F_{\text{on}}-F_{\text{out}}-F_{\text{off}}$.
+flow. For vehicle conservation, net flow $F_{\text{net}}$ is the amount
+entering the link from its upstream mainline link and on-ramps, minus the
+amount leaving toward its downstream mainline link and off-ramps:
+
+$$
+F_{\text{net}}=F_{\text{in}}+F_{\text{on}}-F_{\text{out}}-F_{\text{off}}.
+$$
+
 The conservation score is one minus the normalized absolute conservation
 residual. Both scores are floored at zero. In the equations, $\varepsilon$ is
 a small positive constant that prevents division by zero. The FD sum covers
@@ -345,12 +344,12 @@ $$
 
 An unattached ramp contributes zero flow. A missing measurement from an
 attached ramp is missing evidence, so the affected transition is not scored.
-The public release does not include the organizer's boundary flows. These are
-the traffic flows entering or leaving the panel at its external ends. The
-published local scorer estimates them from network topology and submitted
-values. Its conservation score can differ substantially from the leaderboard
-score and is not a useful leaderboard proxy. The organizer's
-evaluator has the boundary flows. See the official
+The public release does not include the organizer's boundary flows: traffic
+entering or leaving the panel at its external ends. The organizer also
+publishes a local scoring script, but it estimates those flows from network
+topology and submitted values. Its conservation score can differ substantially
+from the leaderboard score and is not a useful leaderboard proxy. The
+competition evaluator has the boundary flows. See the official
 [scoring specification](../official_competition_repo/docs/SCORING_SPEC.md)
 for exact evaluator equations. Task 3 has no separate prediction baseline
 because it evaluates whichever Task 1 values are submitted.
@@ -384,7 +383,7 @@ similar link counts. The score therefore compares submitted flows with hidden
 path flows as well as checking how well the estimates match the released
 counts and prior.
 
-The score combines four parts:
+The official score combines four parts:
 
 $$
 S_{\text{ODME}}=0.45S_{\text{od}}+0.25S_{\text{link}}+
@@ -423,9 +422,9 @@ D_{\text{ref}}=\|\mathbf f^*-\mathbf b\|_1,
 S_{\text{dev}}=\exp\left(-\left|\frac{D_{\text{sub}}}{D_{\text{ref}}}-1\right|\right).
 $$
 
-**Destination Attraction** is the share of total predicted path flow that
-ends in each destination zone. For destination $d$, let $P_d$ be the paths
-ending there. The predicted share is
+The destination-attraction component compares how total path flow is
+distributed across destination zones. For destination $d$, let $P_d$ be the
+paths ending there. The predicted share is
 
 $$
 \hat a_d=\frac{\sum_{p\in P_d}\hat f_p}{\sum_p\hat f_p}.
@@ -439,13 +438,39 @@ S_{\text{attr}}=\max\left(0,
 1-\frac{1}{2}\sum_d|\hat a_d-a_d^*|\right).
 $$
 
-The public release has no reference path-flow answers. Its published
+The public release has no reference path-flow answers. The published
 [Task 4 scorer](../official_competition_repo/src/task4/score_task4.py) can
-calculate $S_{\text{link}}$, which is one quarter of the Task 4 score. It
-cannot score path-flow accuracy, prior deviation, or destination attraction
-without the hidden reference flows. The official
+calculate the link-count component $S_{\text{link}}$, which is one quarter of
+the Task 4 score. It cannot score path-flow accuracy, prior deviation, or
+destination attraction without the hidden reference flows. The official
 [regularised ODME baseline](../official_competition_repo/src/task4/build_task4_odme_artifacts.py)
 fits counts while penalising deviation from the weak prior.
+
+## Competition score and leaderboards
+
+The evaluator combines the four task scores using these weights:
+
+$$
+S_{\text{total}}=
+0.35S_{\text{state}}+
+0.30S_{\text{queue}}+
+0.15S_{\text{physics}}+
+0.20S_{\text{ODME}}.
+$$
+
+For each task, the evaluator first combines the included directional panels
+within each freeway family, then gives the five families equal weight. Task 2
+has targets in four families because both `D12_I405` directions are excluded;
+the other tasks cover all five families. If a required task output is missing,
+that task contributes zero to the combined score. Task 3 contributes its
+physics score from the Task 1 values and requires no separate prediction rows.
+
+The public leaderboard uses validation answers. Private answers are used in
+the final evaluation and determine the competition ranking. Validation and
+private are different generated months, so a validation result is evidence
+about performance on unseen data but does not guarantee a private result. The
+organizers' [task connection and suggested order](../official_competition_repo/README.md#how-the-tasks-connect)
+explains why they recommend beginning with Task 1.
 
 ## Official references
 

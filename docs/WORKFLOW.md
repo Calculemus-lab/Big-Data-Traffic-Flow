@@ -1,28 +1,31 @@
 # Experiment workflow
 
-Use one branch per experiment. Name branches
+Use one branch for each experiment. Name the branch
 `cycle-<number>/CAL-<number>/<experiment-name>`, for example
-`cycle-1/CAL-2/lightgbm-baseline`. Use lowercase letters, numbers, and hyphens
-in the experiment name.
+`cycle-1/CAL-2/lightgbm-baseline`. The CAL number identifies the assigned work
+item in the team's
+[Linear project](https://linear.app/calculemus/project/big-data-traffic-flow-competition-21181673811a/issues).
+Use lowercase letters, numbers, and hyphens in the experiment name.
 
-The CAL number was given to your task on [Linear](https://linear.app/calculemus/project/big-data-traffic-flow-competition-21181673811a/issues).
+Experiment branches keep solution code and results tied to the work item. The
+team generally keeps experiment branches separate instead of merging each
+one into `main`.
 
-Each experiment lives on its own branch, so experiment work is generally not
-merged into `main`.
+Keep executable code in `.py` files. Do not commit Jupyter notebooks. Use a
+`temp/` directory at any depth for disposable files; CI ignores those
+directories and checks that notebooks and temporary files are not committed.
 
-Keep executable code in `.py` files. Do not commit Jupyter notebooks. Put
-disposable files in a `temp/` directory at any depth. These directories and
-notebooks are ignored by Git. Continuous integration checks branch names and
-committed file locations.
+## Keep benchmark comparisons reproducible
 
-For each prepared benchmark, record the inclusive `history_start_date`,
-exclusive `history_end_date`, inclusive `prediction_start_date`, and exclusive
-`prediction_end_date`, along with the selected panels. Reuse those values when
-comparing experiments so each solution receives the same inputs. Official
-train, validation, and private boundaries come from the
+A **Prepared Benchmark** is a repeatable local case with one history period,
+one prediction period, and a selected set of panels. Record its date bounds and
+panels when comparing solutions. The history start and prediction start are
+included; the history end and prediction end are excluded. Keep these values
+the same when comparing experiments. Official train, validation, and private
+period boundaries are listed in the
 [release calendar](RELEASE_PACKAGE_REFERENCE.md#panels-and-date-splits).
 
-Trafficbench records every run, including failures, under `runs/`. See
-[experiment records](EXPERIMENTS.md) for the saved fields and comparison
-commands. Save persistent research outputs under `results/` on the experiment
-branch. See the [results guide](../results/README.md).
+Trafficbench saves a record for every local run, including failed runs, under
+`runs/`. The [experiment records guide](EXPERIMENTS.md) explains how to review
+and compare these records. Save research outputs that should remain with the
+experiment branch under `results/`; see the [results guide](../results/README.md).

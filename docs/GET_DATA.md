@@ -1,39 +1,48 @@
-# Download the data
+# Download the competition data
 
-Join the
-[Kaggle competition](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview)
-before downloading its release. You can download the files from the
-[Kaggle Data page](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/data)
-or use Kaggle's command-line interface.
+The competition release is hosted on Kaggle. Join the
+[competition](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/overview)
+before downloading it. You can download the archive from the
+[Data page](https://www.kaggle.com/competitions/2026-ieee-big-data-traffic-flow-bench/data)
+or use the Kaggle command-line interface (CLI).
 
-Install the repository environment from the project root. It includes the
-Kaggle CLI:
+## Prepare the project environment
+
+From the repository root, install Python 3.12 and the locked project
+environment. The environment includes the Kaggle CLI:
 
 ```sh
 uv python install 3.12
 uv sync --locked
 ```
 
-Sign in to Kaggle from the CLI:
+## Authenticate with Kaggle
+
+Authenticate your Kaggle account with the command-line interface:
 
 ```sh
-uv run kaggle auth login
+uv run --locked kaggle auth login
 ```
 
-Download the archive, then unpack it into `kaggle_public/` at the project root:
+## Download and extract the release
+
+Download the competition archive into the repository root, then extract it to
+`kaggle_public/`:
 
 ```sh
-uv run kaggle competitions download \
-  -c 2026-ieee-big-data-traffic-flow-bench \
+uv run --locked kaggle competitions download \
+  2026-ieee-big-data-traffic-flow-bench \
   -p .
 unzip 2026-ieee-big-data-traffic-flow-bench.zip -d kaggle_public
 ```
 
-Use the extracted `kaggle_public/` directory as the `--data` path for Trafficbench.
+Pass the extracted directory as the `--data` path when preparing a local
+benchmark or running predictions.
 
-For the downloaded directory structure, table columns, and row identifiers, see the
-[public release package reference](RELEASE_PACKAGE_REFERENCE.md). The organizers'
-[data guide](../official_competition_repo/docs/DATA.md) describes the release.
-For the tables passed to solution functions, see
+The [public release package reference](RELEASE_PACKAGE_REFERENCE.md) describes
+the directory layout, file columns, and row identifiers. The organizer's
+[release data guide](../official_competition_repo/docs/DATA.md) explains the
+published data policy. For the information available to each task, see
 [what a solution receives](COMPETITION_AND_THEORY.md#what-a-solution-receives).
-The [Trafficbench guide](TRAFFICBENCH.md) explains how the runner loads them.
+The [Trafficbench guide](TRAFFICBENCH.md) explains how to prepare local cases
+and run solution functions against the extracted release.
