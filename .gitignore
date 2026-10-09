@@ -83,7 +83,6 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
-!notebooks/trafficflowbench_data_exploration.ipynb
 
 # Experiment scratch space at any depth
 temp/
