@@ -1,0 +1,12 @@
+[
+  {
+    "name": "full_model",
+    "queue_rows": 174000,
+    "queue_value_mismatches": 0
+  },
+  {
+    "name": "persistence",
+    "queue_rows": 174000,
+    "queue_value_mismatches": 0
+  }
+]

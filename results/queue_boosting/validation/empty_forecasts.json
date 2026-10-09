@@ -1,0 +1,26 @@
+[
+  {
+    "split": "private",
+    "condition": "queue_ongoing",
+    "windows": 40,
+    "empty_forecasts": 0
+  },
+  {
+    "split": "private",
+    "condition": "queue_onset",
+    "windows": 40,
+    "empty_forecasts": 16
+  },
+  {
+    "split": "validation",
+    "condition": "queue_ongoing",
+    "windows": 40,
+    "empty_forecasts": 0
+  },
+  {
+    "split": "validation",
+    "condition": "queue_onset",
+    "windows": 40,
+    "empty_forecasts": 14
+  }
+]

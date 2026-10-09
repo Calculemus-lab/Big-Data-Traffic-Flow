@@ -1,0 +1,36 @@
+{
+  "task2_missing_keys": 0,
+  "task2_extra_keys": 0,
+  "task1_template_mismatched_keys": 4802643,
+  "task1_missing_keys_excluding_station_id": 4802643,
+  "zero_output_source": "submission_key.csv, not the per-panel Task 1 templates",
+  "invalid_task1_template_mask_regimes": {
+    "D12_I5_S": [
+      "R20"
+    ],
+    "D7_I10_E": [
+      "R30"
+    ],
+    "D7_I10_W": [
+      "R20"
+    ],
+    "D7_I210_E": [
+      "R30"
+    ],
+    "D7_I210_W": [
+      "R30"
+    ],
+    "D7_I405_N": [
+      "R20"
+    ],
+    "D7_I405_S": [
+      "R10"
+    ]
+  },
+  "master_key_mask_regimes": [
+    "R1",
+    "R2",
+    "R3"
+  ],
+  "task1_missing_keys_after_mask_regime_normalization": 0
+}

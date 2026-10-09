@@ -1,0 +1,36 @@
+{
+  "valid_comparisons": [
+    {
+      "experiment": "persistence",
+      "ref": 56918173,
+      "public_composite_score": "0.09051",
+      "task2_score": "0.3017",
+      "status": "SubmissionStatus.COMPLETE"
+    },
+    {
+      "experiment": "queue_boosting_nine_months",
+      "ref": 56917601,
+      "public_composite_score": "0.13514",
+      "task2_score": "0.4504666666666666666666666667",
+      "status": "SubmissionStatus.COMPLETE"
+    },
+    {
+      "experiment": "queue_boosting_28_days",
+      "ref": 56918669,
+      "public_composite_score": "0.13032",
+      "task2_score": "0.4344",
+      "status": "SubmissionStatus.COMPLETE"
+    }
+  ],
+  "discarded_submissions": [
+    {
+      "ref": 56918495,
+      "reason": "The one-off builder exported zero target placeholders after reversed validator arguments. This score does not measure the recent-history model."
+    }
+  ],
+  "template_repair_files": 16,
+  "validated_original_export_values": 174000,
+  "validation_onset_empty_forecasts_full_model": 14,
+  "validation_onset_windows": 40,
+  "training_period_assessment": "The 28-day variant scores slightly lower; this comparison does not support history length as the main cause of the proxy-to-official gap."
+}

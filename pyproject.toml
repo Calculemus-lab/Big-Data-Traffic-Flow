@@ -16,6 +16,7 @@ dependencies = [
     "typer>=0.20,<1",
     "polars>=1.37,<2",
     "tzdata>=2026.5",
+    "lightgbm>=4.6,<5",
 ]
 
 [dependency-groups]
@@ -25,6 +26,7 @@ dev = [
     "pytest==9.1.1",
     "scipy-stubs>=1.18,<1.19",
     "ruff>=0.16.10",
+    "matplotlib>=3.11.2",
 ]
 
 [project.scripts]

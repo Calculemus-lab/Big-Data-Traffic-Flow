@@ -1,0 +1,30 @@
+{
+  "run_id": "20261007T171832-queue_boosting-queue-4aa6ad",
+  "solution": "queue_boosting",
+  "task": "queue",
+  "history_start_date": "2030-06-01",
+  "history_end_date": "2031-03-01",
+  "prediction_start_date": "2031-03-01",
+  "prediction_end_date": "2031-05-01",
+  "target_splits": [
+    "validation",
+    "private"
+  ],
+  "panels": [
+    "D7_I10_E",
+    "D7_I10_W",
+    "D7_I210_E",
+    "D7_I210_W",
+    "D7_I405_N",
+    "D7_I405_S",
+    "D12_I5_N",
+    "D12_I5_S",
+    "D12_I405_N",
+    "D12_I405_S"
+  ],
+  "source_fingerprint": "0025764a4002e7b503fa7a86414976492701070bba3b1ba97525cb54826c49fe",
+  "parameters": {},
+  "scored": false,
+  "final_submission_eligible": true,
+  "metrics": []
+}

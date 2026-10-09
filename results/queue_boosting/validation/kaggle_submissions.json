@@ -1,0 +1,47 @@
+[
+  {
+    "ref": 56918669,
+    "fileName": "recent_verified.csv",
+    "date": "2026-10-07T18:19:24.967000",
+    "description": "Verified Task 2 history comparison: February-only training; every exported queue value checked against predictions; other tasks zero",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.13032",
+    "privateScore": ""
+  },
+  {
+    "ref": 56918495,
+    "fileName": "recent_only.csv",
+    "date": "2026-10-07T18:12:16.163000",
+    "description": "Task 2 controlled history comparison: same queue_boosting model, February-only training, other task outputs zero",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.00000",
+    "privateScore": ""
+  },
+  {
+    "ref": 56918173,
+    "fileName": "persistence_only.csv",
+    "date": "2026-10-07T17:59:31.840000",
+    "description": "Task 2 persistence baseline; state and ODME outputs zero; matched validation comparison",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.09051",
+    "privateScore": ""
+  },
+  {
+    "ref": 56917634,
+    "fileName": "sample_submission.csv",
+    "date": "2026-10-07T17:34:11.323000",
+    "description": "All-zero control to isolate the Task 2 contribution of queue_boosting",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.00000",
+    "privateScore": ""
+  },
+  {
+    "ref": 56917601,
+    "fileName": "task2_only.csv",
+    "date": "2026-10-07T17:32:53.447000",
+    "description": "Task 2 only: queue_boosting; June-February training; state and ODME outputs zero",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.13514",
+    "privateScore": ""
+  }
+]

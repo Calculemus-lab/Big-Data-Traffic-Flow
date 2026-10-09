@@ -1,0 +1,215 @@
+{
+  "restored_files": [
+    {
+      "path": "kaggle_public/task1/D12_I5_S/validation/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D12_I5_S/validation/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D12_I5_S/validation/sample_submission_state.csv",
+      "before_sha256": "e68ce5d0e9c0d0111cc3f63e217744028e723de44f0a6216db68f05f3505d612",
+      "official_sha256": "9255b373284672328066006235413b2847f70854a1586c9ca0825f6265aa6dfd",
+      "malformed_mask_codes": [
+        "R10",
+        "R20",
+        "R30"
+      ],
+      "after_sha256": "9255b373284672328066006235413b2847f70854a1586c9ca0825f6265aa6dfd"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I10_E/private/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I10_E/private/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I10_E/private/sample_submission_state.csv",
+      "before_sha256": "c39d57e7a7687a85531113046d8bf0c15a9dcd3f9f1dff559c5950b005f228fb",
+      "official_sha256": "8dc42c95cad95bda18be55bd9056327e42cd5c81b96376ac9cacaa7af2b215a7",
+      "malformed_mask_codes": [
+        "R10",
+        "R30",
+        "R20"
+      ],
+      "after_sha256": "8dc42c95cad95bda18be55bd9056327e42cd5c81b96376ac9cacaa7af2b215a7"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I10_E/validation/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I10_E/validation/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I10_E/validation/sample_submission_state.csv",
+      "before_sha256": "88e3947c87343a94f5a452b4feb1353f4eb7899e6c150e25c04431426d42a206",
+      "official_sha256": "f29f542bc7dc2e63fddc310b0c5b6015a4af0798903692ff7dee44f298b2e7cd",
+      "malformed_mask_codes": [
+        "R20",
+        "R10",
+        "R30"
+      ],
+      "after_sha256": "f29f542bc7dc2e63fddc310b0c5b6015a4af0798903692ff7dee44f298b2e7cd"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I10_W/private/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I10_W/private/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I10_W/private/sample_submission_state.csv",
+      "before_sha256": "a7dcd8500c37b68b57c72182d372763684b03faa96968a553c2b33f94da1e0f3",
+      "official_sha256": "57cf2f56dd8f1dbecec888a13f5948a4aa0368f2f99e4e4f994401da7e87a4e7",
+      "malformed_mask_codes": [
+        "R30",
+        "R20",
+        "R10"
+      ],
+      "after_sha256": "57cf2f56dd8f1dbecec888a13f5948a4aa0368f2f99e4e4f994401da7e87a4e7"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I10_W/train/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I10_W/train/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I10_W/train/sample_submission_state.csv",
+      "before_sha256": "55e2516101c91f8eb02688827885934a2cbea7337b2b2a7d07c88e01bd6cf621",
+      "official_sha256": "5f739076ee8031dae0416e3b63622253d66dd6acfc5f7d199eead6452ea6328d",
+      "malformed_mask_codes": [
+        "R30",
+        "R10",
+        "R20"
+      ],
+      "after_sha256": "5f739076ee8031dae0416e3b63622253d66dd6acfc5f7d199eead6452ea6328d"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I10_W/validation/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I10_W/validation/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I10_W/validation/sample_submission_state.csv",
+      "before_sha256": "e70ff8a9a8bc695aa4493d8304746a30ad7f7489674e8fbed07742e6b52e9c0b",
+      "official_sha256": "0edbb29e1b188f7891ad992c39434e980cad9d3b0fd1282a893928c5547a1499",
+      "malformed_mask_codes": [
+        "R20",
+        "R10",
+        "R30"
+      ],
+      "after_sha256": "0edbb29e1b188f7891ad992c39434e980cad9d3b0fd1282a893928c5547a1499"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I210_E/private/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I210_E/private/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I210_E/private/sample_submission_state.csv",
+      "before_sha256": "f1e468eada60780c6da424cf53c787cf42d9df40632160360c2f8eadd02151dc",
+      "official_sha256": "df831a057573492b322990c72f709a1682bb1e2903f3245091614a4e3fba0a83",
+      "malformed_mask_codes": [
+        "R30",
+        "R20",
+        "R10"
+      ],
+      "after_sha256": "df831a057573492b322990c72f709a1682bb1e2903f3245091614a4e3fba0a83"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I210_E/train/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I210_E/train/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I210_E/train/sample_submission_state.csv",
+      "before_sha256": "74e8e54aa07de7afd6915e863113b8865d034937d93d43e829f2277ca04cc236",
+      "official_sha256": "e94c84e4bee4f0d047482cef01788d7377f5a1318391b6ca3c480e441d7f17c8",
+      "malformed_mask_codes": [
+        "R10",
+        "R20",
+        "R30"
+      ],
+      "after_sha256": "e94c84e4bee4f0d047482cef01788d7377f5a1318391b6ca3c480e441d7f17c8"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I210_E/validation/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I210_E/validation/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I210_E/validation/sample_submission_state.csv",
+      "before_sha256": "94062da5ec7d431e76876f6b049f2ea75eed46dce15ff2423bb40f870c10c6c9",
+      "official_sha256": "d9f3e703c44044469b86c3ade3b75177ef5eb555b7fc671f94df124ea532dfcc",
+      "malformed_mask_codes": [
+        "R10",
+        "R30",
+        "R20"
+      ],
+      "after_sha256": "d9f3e703c44044469b86c3ade3b75177ef5eb555b7fc671f94df124ea532dfcc"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I210_W/private/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I210_W/private/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I210_W/private/sample_submission_state.csv",
+      "before_sha256": "cdee2427a48a7b9c28fe5465965e2f04844763f8f428c4419ae803efd442dd6d",
+      "official_sha256": "526855c69d07c7da27d9c3ae32e6977f4481b13214d6e98ded8333dc0845f253",
+      "malformed_mask_codes": [
+        "R20",
+        "R30",
+        "R10"
+      ],
+      "after_sha256": "526855c69d07c7da27d9c3ae32e6977f4481b13214d6e98ded8333dc0845f253"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I210_W/validation/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I210_W/validation/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I210_W/validation/sample_submission_state.csv",
+      "before_sha256": "e9989d6886b79dd87019b73e7f871c94c9f7c4b4954f17601f1bd6486c1336e7",
+      "official_sha256": "cf385f86fb6cb51b579ab830a0234e46bd62d022ce9188fd1535130c6243abfe",
+      "malformed_mask_codes": [
+        "R30",
+        "R20",
+        "R10"
+      ],
+      "after_sha256": "cf385f86fb6cb51b579ab830a0234e46bd62d022ce9188fd1535130c6243abfe"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I405_N/private/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I405_N/private/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I405_N/private/sample_submission_state.csv",
+      "before_sha256": "52ca78f6803f5f1efb012b2b0a80cf0e649345d1aa192e618f02ace720324b19",
+      "official_sha256": "47c090b1e8d282ce9a277409369fffac01cb0d2f4a0963ce5b7e01629bc5287c",
+      "malformed_mask_codes": [
+        "R10",
+        "R30",
+        "R20"
+      ],
+      "after_sha256": "47c090b1e8d282ce9a277409369fffac01cb0d2f4a0963ce5b7e01629bc5287c"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I405_N/train/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I405_N/train/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I405_N/train/sample_submission_state.csv",
+      "before_sha256": "0f15d3d78ff6fe3caf7854f71f12f374b529113ea11cffa7f150930080e6ae83",
+      "official_sha256": "c6a80763bd67d2a770e35c92379ff472ec2fa2cd5f3cde6fe497438cb9365561",
+      "malformed_mask_codes": [
+        "R10",
+        "R30",
+        "R20"
+      ],
+      "after_sha256": "c6a80763bd67d2a770e35c92379ff472ec2fa2cd5f3cde6fe497438cb9365561"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I405_N/validation/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I405_N/validation/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I405_N/validation/sample_submission_state.csv",
+      "before_sha256": "528f50ece2208c495adf2bc176aadf8ba7b298b0958d2741fa860456c679d705",
+      "official_sha256": "cecdd4a44984507496f542ba2c71c44aa286e8d3a8df638c181b4116731c0175",
+      "malformed_mask_codes": [
+        "R30",
+        "R20",
+        "R10"
+      ],
+      "after_sha256": "cecdd4a44984507496f542ba2c71c44aa286e8d3a8df638c181b4116731c0175"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I405_S/private/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I405_S/private/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I405_S/private/sample_submission_state.csv",
+      "before_sha256": "7e509e555c5fbfc0aa5aa75baf968af73f464abcce61b860f31df2dd069d3db0",
+      "official_sha256": "affff33ce40c82f1dec00e71e668e28015b473a75e8c86e8441f7dcf4d528973",
+      "malformed_mask_codes": [
+        "R20",
+        "R10",
+        "R30"
+      ],
+      "after_sha256": "affff33ce40c82f1dec00e71e668e28015b473a75e8c86e8441f7dcf4d528973"
+    },
+    {
+      "path": "kaggle_public/task1/D7_I405_S/validation/sample_submission_state.csv",
+      "backup": "temp/queue_input_audit/backups/D7_I405_S/validation/sample_submission_state.csv",
+      "official": "temp/queue_input_audit/official/D7_I405_S/validation/sample_submission_state.csv",
+      "before_sha256": "c07d013b4528b8cc2f606ef4ea98164bfb2fb0bb2d8e1339bfc658de72045c95",
+      "official_sha256": "9725f266b033bd568a964622ced5d85ade1caac2c3deb4959483e7144b6564fb",
+      "malformed_mask_codes": [
+        "R10",
+        "R20",
+        "R30"
+      ],
+      "after_sha256": "9725f266b033bd568a964622ced5d85ade1caac2c3deb4959483e7144b6564fb"
+    }
+  ],
+  "validation_private_missing_state_keys": 0,
+  "validation_private_extra_state_keys": 0,
+  "origin_assessment": "Local CSV rewrite; exact originating process not established. Official copies contain R1/R2/R3 and the local malformed versions contain R10/R20/R30."
+}

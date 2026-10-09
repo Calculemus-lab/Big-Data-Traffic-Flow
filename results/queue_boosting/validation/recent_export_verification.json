@@ -1,0 +1,9 @@
+{
+  "file": "temp/queue_validation_submission/recent_verified.csv",
+  "combined_rows": 6980503,
+  "queue_rows": 174000,
+  "queue_value_mismatches": 0,
+  "positive_queue_cells": 10622.0,
+  "discarded_submission_ref": 56918495,
+  "discarded_reason": "One-off builder reversed requested_target_table and prediction_table, exporting zero target placeholders."
+}

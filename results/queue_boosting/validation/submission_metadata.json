@@ -1,0 +1,37 @@
+{
+  "prediction_run": "runs/queue_boosting_validation/20261007T171832-queue_boosting-queue-4aa6ad",
+  "versions": {
+    "lightgbm": "4.7.0",
+    "numpy": "2.5.3",
+    "polars": "1.44.2",
+    "scipy": "1.18.1"
+  },
+  "source_hashes": {
+    "solutions/queue_boosting/model.py": "db878e9796d3b521ed925e9c0206e76ab4a04d812a8630c27904376d617c6a0f",
+    "solutions/queue_boosting/__init__.py": "03b118497cfb4063f55a503187373a3b114f05af9837e8d6bebb9d6df1331ae4",
+    "solutions/queue_boosting/features.py": "f782b2690bcb191015cfd0a92c16caebb20349ef43346743cea02951a2b90e7e"
+  },
+  "validation_rows": 87000,
+  "private_rows": 87000,
+  "history_start_date": "2030-06-01",
+  "history_end_date": "2031-03-01",
+  "prediction_start_date": "2031-03-01",
+  "prediction_end_date": "2031-05-01",
+  "model_submission_file": "temp/queue_validation_submission/task2_only.csv",
+  "control_file": "kaggle_public/sample_submission.csv",
+  "model_sha256": "62f575e913c0356f9ef64e2e12de0f8bcf4a67c53a633444262c1330ea396c46",
+  "model_bytes": 208233337,
+  "control_sha256": "89e19bb6d96fa6f62a4ce01b1c22e4c5610ff7d4a10750aac5943411858d4ba5",
+  "control_bytes": 152389313,
+  "combined_rows": 6980503,
+  "zero_state_file": "temp/queue_validation_submission/zero_state_master.csv",
+  "zero_odme_file": "temp/queue_validation_submission/zero_odme_master.csv",
+  "model_submission_ref": 56917601,
+  "control_submission_ref": 56917634,
+  "model_public_score": "0.13514",
+  "control_public_score": "0.00000",
+  "derived_task2_public_score": "0.4504666666666666666666666667",
+  "score_precision_note": "Approximate: Kaggle displays the overall score to five decimal places.",
+  "prediction_seed": 1498855350,
+  "tests_passed": 51
+}
