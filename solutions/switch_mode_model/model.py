@@ -14,6 +14,58 @@ _TS = 1.0 / 12.0
 _SIGMA_FLOOR = 1.0
 
 
+_SMM_GPU_WARNED = False
+
+
+def _load_cupy(gpu_device=0):
+    """Return CuPy only if runtime + NVRTC/headers work (not just device count)."""
+    try:
+        import cupy as cp  # type: ignore[import-not-found]
+
+        if cp.cuda.runtime.getDeviceCount() <= 0:
+            return None
+        cp.cuda.Device(int(gpu_device)).use()
+        probe = cp.zeros(2, dtype=cp.float64)
+        probe = probe + 1.0
+        cp.cuda.stream.get_current_stream().synchronize()
+        _ = float(probe[0].get())
+        return cp
+    except ImportError:
+        return None
+    except Exception:
+        return None
+
+
+def _warn_smm_cpu(reason: str, params) -> None:
+    global _SMM_GPU_WARNED
+    if _SMM_GPU_WARNED:
+        return
+    _SMM_GPU_WARNED = True
+    choice = str((params or {}).get("smm_device", "auto")).lower()
+    if choice in ("cpu", "host"):
+        return
+    hint = 'CUDA 13: uv pip install "cupy-cuda13x[ctk]"'
+    tqdm.write(f"SMM GPU unavailable ({reason}); using CPU. {hint}")
+
+
+def _resolve_smm_device(params) -> str:
+    choice = str((params or {}).get("smm_device", "auto")).lower()
+    if choice in ("cpu", "host"):
+        return "cpu"
+    gpu_device = (params or {}).get("gpu_device", 0)
+    if _load_cupy(gpu_device) is not None:
+        return "gpu"
+    if choice in ("gpu", "cuda"):
+        _warn_smm_cpu("CuPy/CUDA toolkit not ready", params)
+    return "cpu"
+
+
+def _scalar(value, xp):
+    if xp is np:
+        return float(value)
+    return float(value.get())
+
+
 def _pair(value, name):
     arr = np.asarray(value, dtype=float).reshape(-1)
     if arr.size == 1:
@@ -37,13 +89,15 @@ def _split_ids(value):
     return [part.strip() for part in text.split(";") if part.strip()]
 
 
-def _log_gauss(innov, S):
-    sign, logdet = np.linalg.slogdet(S)
+def _log_gauss(innov, S, xp=np):
+    sign, logdet = xp.linalg.slogdet(S)
+    sign = _scalar(sign, xp)
+    logdet = _scalar(logdet, xp)
     if sign <= 0 or not np.isfinite(logdet):
         return -1e12
     try:
-        quad = float(innov @ np.linalg.solve(S, innov))
-    except np.linalg.LinAlgError:
+        quad = _scalar(innov @ xp.linalg.solve(S, innov), xp)
+    except xp.linalg.LinAlgError:
         return -1e12
     if not np.isfinite(quad):
         return -1e12
@@ -100,9 +154,11 @@ class MixtureKalmanEstimator:
         self._initial_state(ctx)
         return self
 
-    def predict(self, ctx):
+    def predict(self, ctx, *, kf_bar=None, quiet=False):
         if not getattr(self, "fitted_", False):
             raise RuntimeError("MixtureKalmanEstimator is not fitted")
+        params = getattr(ctx, "params", None) or {}
+        self._configure_smm_xp(params)
         obs = _frame(getattr(ctx, "observations", None))
         ramps = _frame(getattr(ctx, "ramps", None))
         targets = ctx.targets.copy()
@@ -123,8 +179,22 @@ class MixtureKalmanEstimator:
                 times = pd.DatetimeIndex(np.sort(day_obs["timestamp"].unique()))
                 day_ramps = ramps.loc[ramps["timestamp"].dt.floor("D").eq(day)] if not ramps.empty else ramps
                 schedule.append((day_obs, day_ramps, times))
-            label = f"{getattr(ctx, 'panel', '')} mixture KF".strip()
-            bar = tqdm(total=sum(len(times) for _, _, times in schedule), desc=label, unit="step", mininterval=0.25)
+            panel = getattr(ctx, "panel", "")
+            backend = "GPU" if getattr(self, "_xp", np) is not np else "CPU"
+            label = f"{panel} mixture KF ({backend})".strip()
+            own_bar = False
+            if quiet:
+                bar = None
+            elif kf_bar is not None:
+                bar = kf_bar
+            else:
+                bar = tqdm(
+                    total=sum(len(times) for _, _, times in schedule),
+                    desc=label,
+                    unit="step",
+                    mininterval=0.25,
+                )
+                own_bar = True
             try:
                 for day_obs, day_ramps, times in schedule:
                     rho = self._filter_day(day_obs, day_ramps, times, rng, bar)
@@ -137,7 +207,8 @@ class MixtureKalmanEstimator:
                         "flow_vph": flow.reshape(-1),
                     }))
             finally:
-                bar.close()
+                if own_bar and bar is not None:
+                    bar.close()
         pred = pd.concat(pieces, ignore_index=True) if pieces else pd.DataFrame(columns=["timestamp", "link_id", "speed_kmh", "flow_vph"])
         if not pred.empty:
             pred["timestamp"] = pd.to_datetime(pred["timestamp"], utc=True)
@@ -300,29 +371,63 @@ class MixtureKalmanEstimator:
             flow_fb = means["flow_vph"].to_dict()
         self._fallbacks = (speed_fb, flow_fb)
         self.fitted_ = True
+        self._xp = np
+        self._gpu_ready = False
+
+    def _configure_smm_xp(self, params) -> None:
+        device = _resolve_smm_device(params)
+        gpu_device = (params or {}).get("gpu_device", 0)
+        self._xp = np
+        self._gpu_ready = False
+        if device != "gpu":
+            return
+        cp = _load_cupy(gpu_device)
+        if cp is None:
+            _warn_smm_cpu("CuPy probe failed", params)
+            return
+        self._xp = cp
+        try:
+            self._ensure_gpu_arrays()
+        except Exception as exc:
+            _warn_smm_cpu(str(exc), params)
+            self._xp = np
+            self._gpu_ready = False
+
+    def _ensure_gpu_arrays(self):
+        xp = self._xp
+        if xp is np:
+            return
+        self._A_xp = xp.asarray(self.A_, dtype=float)
+        self._B_xp = xp.asarray(self.B_, dtype=float)
+        self._b_xp = xp.asarray(self.b_, dtype=float)
+        self._P0_xp = xp.asarray(self.P0_, dtype=float)
+        self._x0_xp = xp.asarray(self.x0_, dtype=float)
+        self._gpu_ready = True
 
     def _filter_day(self, obs, ramps, times, rng, bar=None):
-        rho_obs, mask, values, pct = self._day_inputs(obs, ramps, times)
-        u_hat, sigma_u, z_meas, z_var = self._impute(times, values, pct)
+        rho_obs, mask, values, pct, q_any = self._day_inputs(obs, ramps, times)
+        u_hat, sigma_u, z_meas, z_var = self._impute(times, values, pct, q_any)
         M = int(self.M)
         n = self.n_cells_
         prior = self.Trans_[0]
         modes = rng.choice(2, size=M, p=prior)
         xs = []
         Ps = []
+        xmod = getattr(self, "_xp", np)
+        P0 = self._P0_xp if xmod is not np and getattr(self, "_gpu_ready", False) else self.P0_
+        x0_seed = xmod.zeros(self.n_x_, dtype=float) if xmod is not np else np.zeros(self.n_x_)
+        x0_seed[:n] = self._x0_xp if xmod is not np and getattr(self, "_gpu_ready", False) else self.x0_
         log_w = np.zeros(M)
-        x0 = np.zeros(self.n_x_)
-        x0[:n] = self.x0_
         for m in range(M):
             y, C, R = self._observe(0, modes[m], rho_obs, mask, z_meas, z_var)
-            x, P, loglik = _update(x0.copy(), self.P0_.copy(), y, C, R)
+            x, P, loglik = _update(x0_seed.copy(), P0.copy(), y, C, R, xp=xmod)
             xs.append(x)
             Ps.append(P)
             log_w[m] = loglik
         weights = _normalize(log_w, float(self.eps), M)
         log_w = np.log(weights)
         rho = np.zeros((len(times), n))
-        rho[0] = sum(weights[m] * xs[m][:n] for m in range(M))
+        rho[0] = self._mixture_density(xs, weights, n, xmod)
         if bar is not None:
             bar.set_postfix_str(pd.Timestamp(times[0]).strftime("%Y-%m-%d %H:%M"), refresh=False)
             bar.update()
@@ -332,9 +437,9 @@ class MixtureKalmanEstimator:
                 cands = []
                 log_mu = np.zeros(2)
                 for mode in (0, 1):
-                    xp, Pp = self._predict(xs[m], Ps[m], mode, u_hat[t], sigma_u[t])
+                    x_pred, P_pred = self._predict(xs[m], Ps[m], mode, u_hat[t], sigma_u[t])
                     y, C, R = self._observe(t, mode, rho_obs, mask, z_meas, z_var)
-                    xn, Pn, loglik = _update(xp, Pp, y, C, R)
+                    xn, Pn, loglik = _update(x_pred, P_pred, y, C, R, xp=xmod)
                     cands.append((xn, Pn))
                     log_mu[mode] = np.log(self.Trans_[modes[m], mode]) + loglik
                 log_zeta[m] = logsumexp(log_mu)
@@ -344,11 +449,19 @@ class MixtureKalmanEstimator:
             log_w = log_w + log_zeta
             weights = _normalize(log_w, float(self.eps), M)
             log_w = np.log(weights)
-            rho[t] = sum(weights[m] * xs[m][:n] for m in range(M))
+            rho[t] = self._mixture_density(xs, weights, n, xmod)
             if bar is not None:
                 bar.set_postfix_str(pd.Timestamp(times[t]).strftime("%Y-%m-%d %H:%M"), refresh=False)
                 bar.update()
         return rho
+
+    def _mixture_density(self, xs, weights, n, xp):
+        if xp is np:
+            return sum(weights[m] * xs[m][:n] for m in range(len(weights)))
+        total = xp.zeros(n, dtype=float)
+        for m, w in enumerate(weights):
+            total = total + w * xs[m][:n]
+        return xp.asnumpy(total)
 
     def _day_inputs(self, obs, ramps, times):
         n = self.n_cells_
@@ -390,7 +503,6 @@ class MixtureKalmanEstimator:
             )
             ramp_index = {ramp_id: i for i, ramp_id in enumerate(ramp_ids)}
         q_any = np.where(np.isfinite(q_trusted), q_trusted, q_inacc)
-        self._q_any = q_any
         for j, spec in enumerate(self.specs_):
             if spec["kind"] == "boundary":
                 trusted_col, inacc_col, inacc_pct = q_trusted[:, spec["cell"]], q_inacc[:, spec["cell"]], pct_inacc[:, spec["cell"]]
@@ -405,9 +517,9 @@ class MixtureKalmanEstimator:
             pct[use_t, j] = 100.0
             values[use_i, j] = inacc_col[use_i]
             pct[use_i, j] = inacc_pct[use_i]
-        return rho, mask, values, pct
+        return rho, mask, values, pct, q_any
 
-    def _impute(self, times, values, pct):
+    def _impute(self, times, values, pct, q_any):
         T = len(times)
         n_kept = int(self.kept_.size)
         u_hat = np.zeros((T, n_kept))
@@ -437,7 +549,7 @@ class MixtureKalmanEstimator:
                     frac = 1.0 - np.clip(raw_pct, 0.0, 100.0) / 100.0
                     guess, sig = raw, max(std * frac, _SIGMA_FLOOR)
                 else:
-                    neigh = self._neighbor(t, j, neighbors[j], values)
+                    neigh = self._neighbor(t, j, neighbors[j], values, q_any)
                     if np.isfinite(last[local]):
                         guess = last[local]
                     elif np.isfinite(neigh):
@@ -464,12 +576,12 @@ class MixtureKalmanEstimator:
                     z_var[t, local] = max(_SIGMA_FLOOR, abs(values[t, j]) * frac) ** 2
         return u_hat, sigma_u, z_meas, z_var
 
-    def _neighbor(self, t, j, others, values):
+    def _neighbor(self, t, j, others, values, q_any):
         spec = self.specs_[j]
         if spec["name"] == "q_in" and self.n_cells_ > 1:
-            return self._q_any[t, 1]
+            return q_any[t, 1]
         if spec["name"] == "q_out" and self.n_cells_ > 1:
-            return self._q_any[t, self.n_cells_ - 2]
+            return q_any[t, self.n_cells_ - 2]
         if not others:
             return np.nan
         sample = values[t, others]
@@ -477,21 +589,26 @@ class MixtureKalmanEstimator:
         return float(np.mean(sample)) if sample.size else np.nan
 
     def _predict(self, x, P, mode, u_hat, sigma_u):
+        xp = getattr(self, "_xp", np)
+        gpu = xp is not np and getattr(self, "_gpu_ready", False)
+        A = self._A_xp[mode] if gpu else self.A_[mode]
+        B = self._B_xp[mode] if gpu else self.B_[mode]
+        b = self._b_xp[mode] if gpu else self.b_[mode]
         n = self.n_cells_
-        x_pred = self.A_[mode] @ x
-        B = self.B_[mode]
+        x_pred = A @ x
         if u_hat.size:
-            x_pred[:n] += B @ u_hat
+            u = xp.asarray(u_hat, dtype=float) if gpu else u_hat
+            x_pred[:n] = x_pred[:n] + B @ u
         if mode == 1:
-            x_pred[:n] += self.b_[mode]
-        Q = np.zeros((self.n_x_, self.n_x_))
-        Q[:n, :n] = self.sigma_v_[mode] ** 2 * np.eye(n)
+            x_pred[:n] = x_pred[:n] + b[:n]
+        Q = xp.zeros((self.n_x_, self.n_x_), dtype=float)
+        Q[:n, :n] = self.sigma_v_[mode] ** 2 * xp.eye(n)
         if u_hat.size:
-            variance = np.asarray(sigma_u, dtype=float) ** 2
-            Q[:n, :n] += (B * variance) @ B.T
+            variance = xp.asarray(sigma_u, dtype=float) ** 2 if gpu else np.asarray(sigma_u, dtype=float) ** 2
+            Q[:n, :n] = Q[:n, :n] + (B * variance) @ B.T
         if self.n_walk_:
-            Q[n:, n:] = self.sigma_walk_ ** 2 * np.eye(self.n_walk_)
-        P_pred = self.A_[mode] @ P @ self.A_[mode].T + Q
+            Q[n:, n:] = self.sigma_walk_ ** 2 * xp.eye(self.n_walk_)
+        P_pred = A @ P @ A.T + Q
         return x_pred, 0.5 * (P_pred + P_pred.T)
 
     def _observe(self, t, mode, rho, mask, z_meas, z_var):
@@ -519,27 +636,37 @@ class MixtureKalmanEstimator:
         return np.clip(speed, 0.0, None), q * self.lanes_
 
 
-def _update(x, P, y, C, R):
+def _update(x, P, y, C, R, xp=np):
     if y.size == 0:
         return x, P, 0.0
+    if xp is not np:
+        y = xp.asarray(y, dtype=float)
+        C = xp.asarray(C, dtype=float)
+        R = xp.asarray(R, dtype=float)
     innov = y - C @ x
     S = C @ P @ C.T + R
-    S = 0.5 * (S + S.T) + 1e-8 * np.eye(y.size)
-    loglik = _log_gauss(innov, S)
+    S = 0.5 * (S + S.T) + 1e-8 * xp.eye(y.size)
+    loglik = _log_gauss(innov, S, xp=xp)
     try:
-        K = np.linalg.solve(S, C @ P).T
-    except np.linalg.LinAlgError:
+        K = xp.linalg.solve(S, C @ P).T
+    except xp.linalg.LinAlgError:
         return x, P, -1e12
     x_new = x + K @ innov
-    eye = np.eye(x.size)
+    eye = xp.eye(x.size)
     gain = eye - K @ C
     P_new = gain @ P @ gain.T + K @ R @ K.T
     P_new = 0.5 * (P_new + P_new.T)
-    if not np.isfinite(x_new).all():
-        x_new = np.nan_to_num(x, nan=0.0)
-    if not np.isfinite(P_new).all():
-        P_new = np.nan_to_num(P, nan=0.0)
-        P_new = 0.5 * (P_new + P_new.T) + np.eye(x.size)
+    if xp is np:
+        finite_x = np.isfinite(x_new).all()
+        finite_p = np.isfinite(P_new).all()
+    else:
+        finite_x = bool(xp.isfinite(x_new).all())
+        finite_p = bool(xp.isfinite(P_new).all())
+    if not finite_x:
+        x_new = xp.nan_to_num(x, nan=0.0)
+    if not finite_p:
+        P_new = xp.nan_to_num(P, nan=0.0)
+        P_new = 0.5 * (P_new + P_new.T) + xp.eye(x.size)
     return x_new, P_new, loglik
 
 
