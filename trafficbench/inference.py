@@ -221,7 +221,7 @@ def _load_predictor(solution_name: str, task: Task) -> object:
     if not callable(predictor):
         raise TypeError(
             f"solutions/{solution_name} must define "
-            f"{task}(release_slice, target_templates)"
+            f"{task}(release_slice, target_templates, solution_parameters)"
         )
     return predictor
 
@@ -256,7 +256,7 @@ def _invoke_solution(
     # Hide observations that would reveal requested answers before loading the
     # solution, then build zero-filled target rows from their identifiers.
     solution_visible_slice = _redact_target_period(
-        replace(release_slice, parameters=solution_parameters, seed=random_seed),
+        replace(release_slice, seed=random_seed),
         task,
         requested_target_keys_by_panel_and_split,
     )
@@ -270,6 +270,7 @@ def _invoke_solution(
             [
                 ReleasePackageSlice,
                 PanelSplitTableMap[pl.LazyFrame],
+                JsonObject,
             ],
             object,
         ],
@@ -278,6 +279,7 @@ def _invoke_solution(
     raw_predictions = predictor(
         solution_visible_slice,
         target_templates,
+        solution_parameters,
     )
     if not isinstance(raw_predictions, Mapping):
         raise TypeError(f"{task} must return a mapping from panel to split tables")

@@ -18,6 +18,7 @@ from trafficbench.contracts import (
     KEYS,
     MIN_OBSERVED_PERCENT,
     VALUES,
+    JsonObject,
     Panel,
     ReleasePackageSlice,
     Split,
@@ -42,6 +43,7 @@ def state(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, table_types.StateFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, table_types.StateFrame]]:
     """Blend baseline estimates with nearby visible state measurements.
 
@@ -49,19 +51,19 @@ def state(
     observations are excluded before interpolation.
 
     Args:
-        release_slice: Network data, masked observations, historical labels, and settings.
+        release_slice: Network data, masked observations, and historical labels.
         target_templates_by_panel_and_split: Zero-filled Task 1 target rows,
             grouped by panel and release split.
+        solution_parameters: JSON settings for this state predictor.
 
     Returns:
         One official-shaped prediction table for each panel and split.
     """
-    blend = StateParameters.model_validate(
-        {"blend": release_slice.parameters.get("blend", 0.5)}
-    ).blend
+    blend = StateParameters.model_validate(solution_parameters).blend
     return map_panels(
         release_slice,
         target_templates_by_panel_and_split,
+        solution_parameters,
         partial(_blend_panel, blend=blend),
     )
 
@@ -70,15 +72,17 @@ def _blend_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
     target_templates_by_split: Mapping[Split, table_types.StateFrame],
+    solution_parameters: JsonObject,
     *,
     blend: float,
 ) -> dict[Split, table_types.StateFrame]:
     """Blend baseline predictions with interpolated measurements for one panel.
 
     Args:
-        release_slice: Selected release tables and settings for this run.
+        release_slice: Selected release tables and historical labels.
         panel: Panel whose target rows and historical measurements are used.
         target_templates_by_split: Zero-filled Task 1 target rows by split.
+        solution_parameters: JSON settings passed to the baseline predictor.
         blend: Weight assigned to the interpolated measurements.
 
     Returns:
@@ -89,6 +93,7 @@ def _blend_panel(
     predictions_by_split = baseline.state(
         release_slice,
         {panel: dict(target_templates_by_split)},
+        solution_parameters,
     )[panel]
     blended_predictions: dict[Split, table_types.StateFrame] = {}
     # Interpolate within each station-link series so measurements from another

@@ -622,8 +622,7 @@ class ReleasePackageSlice:
         prediction_end_date: Exclusive end of visible inputs and target selection.
         panel_slices_by_panel: Selected panel data, indexed by panel ID.
         source_fingerprint: Identity of the extracted release file inventory.
-        parameters: JSON-compatible solution settings for this run.
-        seed: Random seed supplied to the solution.
+        seed: Random seed associated with the experiment.
     """
 
     history_start_date: date
@@ -632,7 +631,6 @@ class ReleasePackageSlice:
     prediction_end_date: date
     panel_slices_by_panel: Mapping[Panel, PanelReleaseSlice]
     source_fingerprint: str
-    parameters: JsonObject = field(default_factory=dict[str, JsonValue])
     seed: int = 0
 
 

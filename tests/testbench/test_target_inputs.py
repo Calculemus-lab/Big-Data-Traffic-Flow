@@ -15,6 +15,7 @@ from trafficbench.contracts import (
     MASKED_STATE_COLUMNS,
     QUEUE_FORECAST_STEPS,
     VALUES,
+    JsonObject,
     Panel,
     ReleasePackageSlice,
     Split,
@@ -170,6 +171,7 @@ def test_answer_values_are_scored_after_zero_templates_reach_solution(
     def predict_queue(
         visible_slice: ReleasePackageSlice,
         requested_targets: dict[Panel, dict[Split, table_types.QueueFrame]],
+        _solution_parameters: JsonObject,
     ) -> dict[Panel, dict[Split, table_types.QueueFrame]]:
         """Inspect what the solution sees before returning queue predictions."""
         nonlocal solution_received_zero_template

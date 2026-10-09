@@ -25,7 +25,8 @@ GitHub Actions workflow artifacts.
 1. Create a private repository for the team's data, with an initial README commit.
 2. Prepare one train interval, then package it locally. The example uses train
    inputs starting November 3, includes historical labels through November 19,
-   and generates local targets from November 20 through November 27:
+   and generates local targets from November 20 through November 27. Run these
+   commands from the code repository root:
 
 ```sh
 uv run --locked bench prepare --data kaggle_public \
@@ -40,7 +41,7 @@ uv run --locked bench package-ci \
 
 3. Create a release tagged `benchmarks-v1` in the private data repository and
    attach every file produced by the packaging command. You can use GitHub's
-   release page or:
+   release page or, after authenticating the GitHub CLI (`gh`), run:
 
 ```sh
 gh release create benchmarks-v1 data/ci-packages/quick/* \
@@ -48,7 +49,8 @@ gh release create benchmarks-v1 data/ci-packages/quick/* \
   --notes 'Fixed team validation data. Keep this repository private.'
 ```
 
-4. Add the full profile to the same release when ready:
+4. From the code repository root, add the full profile to the same release when
+   ready:
 
 ```sh
 uv run --locked bench prepare --data kaggle_public \
@@ -93,20 +95,23 @@ Open **Actions → Experiment benchmark → Run workflow**. Select the branch,
 solution package, task, profile, and parameters. The workflow first downloads
 the profile's JSON index, which lists the panel archives. It then starts one
 job for each selected panel. Each job downloads that panel's archive, verifies
-its SHA-256 checksum, and runs the solution. At most two panel jobs run at a
-time. The final job combines the panel results using the same task and panel
+its SHA-256 checksum, a digest used to check that the archive was not changed,
+and runs the solution. At most two panel jobs run at a time. The final job
+combines the panel results using the same task and panel
 weights as local Trafficbench runs. A missing or failed panel result prevents
 a combined score.
 
-Each panel job has a 30-minute timeout. The standard private-repository Linux
-runner has 8 GB RAM, and the public-repository runner has 16 GB according to the
+Each panel job has a 30-minute timeout. The standard Linux runner for a private
+repository has 8 gigabytes (GB) of random-access memory (RAM), and the public
+repository runner has 16 GB according to the
 [GitHub-hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 Each hosted job scans one panel's prepared tables lazily. A solution reads
 only the tables and columns it collects. Solutions that load large histories
 into memory may still need to run locally because the hosted job has limited
-memory. The workflow's `ubuntu-latest` runner does not provide a GPU. GitHub
-offers GPU-enabled larger runners for organizations on eligible plans, but this
-repository's workflow is not configured to use one. See GitHub's
+memory. The workflow's `ubuntu-latest` runner does not provide a graphics
+processing unit (GPU). GitHub offers GPU-enabled larger runners for
+organizations on eligible plans, but this repository's workflow is not
+configured to use one. See GitHub's
 [larger-runner specifications](https://docs.github.com/en/actions/reference/runners/larger-runners)
 if GPU-backed hosted runs become necessary.
 

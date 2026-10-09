@@ -19,6 +19,7 @@ from trafficbench.contracts import (
     QUEUE_INTERVAL_MINUTES,
     QUEUE_SPEED_FRACTION,
     VALUES,
+    JsonObject,
     Panel,
     PanelReleaseSlice,
     ReleasePackageSlice,
@@ -44,6 +45,7 @@ def state(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, table_types.StateFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, table_types.StateFrame]]:
     """Predict Task 1 speed and flow for each requested target row.
 
@@ -56,6 +58,8 @@ def state(
         release_slice: Network tables, masked observations, and historical labels.
         target_templates_by_panel_and_split: Zero-filled Task 1 target rows,
             grouped by panel and release split.
+        solution_parameters: JSON settings supplied to this solution. The
+            baseline state predictor does not use any settings.
 
     Returns:
         One official-shaped prediction table for each panel and split.
@@ -63,6 +67,7 @@ def state(
     return map_panels(
         release_slice,
         target_templates_by_panel_and_split,
+        solution_parameters,
         _state_for_panel,
     )
 
@@ -71,11 +76,12 @@ def _state_for_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
     target_templates_by_split: Mapping[Split, table_types.StateFrame],
+    _solution_parameters: JsonObject,
 ) -> dict[Split, table_types.StateFrame]:
     """Predict one panel's state rows for each requested split.
 
     Args:
-        release_slice: Selected release tables and settings for this run.
+        release_slice: Selected release tables and historical labels.
         panel: Panel whose historical measurements and network are used.
         target_templates_by_split: Zero-filled Task 1 target rows by split.
 
@@ -211,6 +217,7 @@ def queue(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, table_types.QueueFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, table_types.QueueFrame]]:
     """Predict all requested queue windows from their latest history readings.
 
@@ -222,6 +229,8 @@ def queue(
         release_slice: Selected traffic and network tables for each panel.
         target_templates_by_panel_and_split: Zero-filled queue target rows,
             grouped by panel and release split.
+        solution_parameters: JSON settings supplied to this solution. The
+            baseline queue predictor does not use any settings.
 
     Returns:
         One prediction table per panel and split, with binary queue labels.
@@ -229,6 +238,7 @@ def queue(
     return map_panels(
         release_slice,
         target_templates_by_panel_and_split,
+        solution_parameters,
         _queue_for_panel,
     )
 
@@ -237,6 +247,7 @@ def _queue_for_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
     target_templates_by_split: Mapping[Split, table_types.QueueFrame],
+    _solution_parameters: JsonObject,
 ) -> dict[Split, table_types.QueueFrame]:
     """Predict the requested queue windows for one panel.
 
@@ -303,29 +314,30 @@ def odme(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, table_types.OdmeFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, table_types.OdmeFrame]]:
     """Estimate flow on every requested path for its panel and departure period.
 
     Task 4 is an origin-destination matrix estimation (ODME) problem. This
     predictor balances agreement with observed link counts against distance
-    from the supplied weak prior. ``release_slice.parameters['regularization']``
+    from the supplied weak prior. The ``regularization`` solution parameter
     controls the relative prior penalty and defaults to ``0.05``.
 
     Args:
         release_slice: Candidate paths, their links, observed counts, weak
-            priors, and solution settings.
+            priors, and historical labels.
         target_templates_by_panel_and_split: Zero-filled Task 4 target rows,
             grouped by panel and release split.
+        solution_parameters: JSON settings supplied to this solution.
 
     Returns:
         One table per panel and split with each requested path flow estimated.
     """
-    regularization = OdmeParameters.model_validate(
-        {"regularization": release_slice.parameters.get("regularization", 0.05)}
-    ).regularization
+    regularization = OdmeParameters.model_validate(solution_parameters).regularization
     return map_panels(
         release_slice,
         target_templates_by_panel_and_split,
+        solution_parameters,
         partial(_odme_for_panel, regularization=regularization),
     )
 
@@ -334,13 +346,14 @@ def _odme_for_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
     target_templates_by_split: Mapping[Split, table_types.OdmeFrame],
+    _solution_parameters: JsonObject,
     *,
     regularization: float,
 ) -> dict[Split, table_types.OdmeFrame]:
     """Estimate path flows for every requested split of one panel.
 
     Args:
-        release_slice: Shared counts, priors, network tables, and settings.
+        release_slice: Shared counts, priors, and network tables.
         panel: Panel whose count and prior tables define the path-flow fit.
         target_templates_by_split: Zero-filled Task 4 target rows by split.
         regularization: Penalty weight for distance from the weak prior.

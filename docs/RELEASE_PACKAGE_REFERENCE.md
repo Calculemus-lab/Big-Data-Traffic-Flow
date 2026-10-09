@@ -1,13 +1,18 @@
 # Public release package reference
 
-This reference describes the files downloaded from the competition. All paths
-below start at the unpacked release directory. `<PANEL>`, `<SPLIT>`,
-`<REGIME>`, and date components stand for values used in the release paths.
-Solution functions work with tables exposed by Trafficbench rather than
-opening these files directly. The [competition guide](COMPETITION_AND_THEORY.md#what-a-solution-receives)
-shows how those tables are grouped and used by each task. The
-[Trafficbench guide](TRAFFICBENCH.md) explains how the runner builds the
-in-memory tables and calls solution functions.
+This reference describes the files downloaded from the competition. A panel
+is one directional freeway network; the competition groups two directions
+into each freeway family. A split is one date interval, such as `train` or
+`validation`. In paths below, `<PANEL>`, `<SPLIT>`, `<REGIME>`, and date
+components are placeholders for values in the release. All paths start at the
+unpacked release directory.
+
+Solution functions read tables exposed by Trafficbench rather than opening the
+downloaded files directly. The
+[competition guide](COMPETITION_AND_THEORY.md#what-a-solution-receives)
+explains how those tables are grouped and used by each task. The
+[Trafficbench guide](TRAFFICBENCH.md) explains how the local interface builds
+the in-memory tables and calls solution functions.
 
 The package contains configuration files, network tables for each panel,
 time-series traffic records, task target and scenario tables, and the combined
@@ -21,6 +26,8 @@ See [data download instructions](GET_DATA.md) to obtain and unpack it. The offic
 give further detail on those subjects.
 
 ## Package layout
+
+The unpacked release has this directory structure:
 
 ```text
 <release-root>/
@@ -128,8 +135,10 @@ replacements.
 ## Static network tables
 
 Network files describe one panel and are shared by its split-specific traffic
-records. In these files, keys are unique within a panel. `link_id`, `path_id`,
-and ramp IDs are strings even when they contain digits.
+records. A table's key is the column or combination of columns that identifies
+one row; keys in these files are unique within a panel. Field names such as
+`link_id`, `path_id`, and `ramp_link_id` contain identifiers. These values are
+strings even when they contain digits.
 
 ### Mainline link attributes
 

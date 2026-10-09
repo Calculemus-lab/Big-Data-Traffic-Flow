@@ -174,59 +174,68 @@ independently. Add helper modules as needed.
 from __future__ import annotations
 
 from solutions import baseline
-from trafficbench.contracts import Panel, ReleasePackageSlice, Split
+from trafficbench.contracts import JsonObject, Panel, ReleasePackageSlice, Split
 from trafficbench.table_types import OdmeFrame, QueueFrame, StateFrame
 
 
 def state(
     release_slice: ReleasePackageSlice,
     target_templates_by_panel_and_split: dict[Panel, dict[Split, StateFrame]],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, StateFrame]]:
     """Return Task 1 speed and flow predictions for the supplied target rows.
 
     Args:
-        release_slice: Released inputs, historical labels, network data, and
-            solution settings.
+        release_slice: Released inputs, historical labels, and network data.
         target_templates_by_panel_and_split: Zero-filled Task 1 rows to predict.
+        solution_parameters: JSON settings passed to this solution.
 
     Returns:
         Task 1 predictions grouped by panel and release split.
     """
-    return baseline.state(release_slice, target_templates_by_panel_and_split)
+    return baseline.state(
+        release_slice, target_templates_by_panel_and_split, solution_parameters
+    )
 
 
 def queue(
     release_slice: ReleasePackageSlice,
     target_templates_by_panel_and_split: dict[Panel, dict[Split, QueueFrame]],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, QueueFrame]]:
     """Return Task 2 queue predictions for the supplied target rows.
 
     Args:
-        release_slice: Released inputs, historical labels, network data, and
-            solution settings.
+        release_slice: Released inputs, historical labels, and network data.
         target_templates_by_panel_and_split: Zero-filled Task 2 rows to predict.
+        solution_parameters: JSON settings passed to this solution.
 
     Returns:
         Queue predictions grouped by panel and release split.
     """
-    return baseline.queue(release_slice, target_templates_by_panel_and_split)
+    return baseline.queue(
+        release_slice, target_templates_by_panel_and_split, solution_parameters
+    )
 
 
 def odme(
     release_slice: ReleasePackageSlice,
     target_templates_by_panel_and_split: dict[Panel, dict[Split, OdmeFrame]],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, OdmeFrame]]:
     """Return Task 4 path-flow predictions for the supplied target rows.
 
     Args:
-        release_slice: Released inputs, historical labels, network data, and
-            solution settings.
+        release_slice: Released inputs, historical labels, and network data.
         target_templates_by_panel_and_split: Zero-filled Task 4 rows to predict.
+        solution_parameters: JSON settings passed to this solution.
 
     Returns:
         Path-flow predictions grouped by panel and release split.
     """
-    return baseline.odme(release_slice, target_templates_by_panel_and_split)
+    return baseline.odme(
+        release_slice, target_templates_by_panel_and_split, solution_parameters
+    )
 '''
     )
     logger.info(
