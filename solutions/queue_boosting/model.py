@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from functools import partial
 from typing import NamedTuple
 
 import lightgbm as lgb
@@ -28,6 +27,7 @@ from trafficbench.contracts import (
     QUEUE_FORECAST_STEPS,
     QUEUE_INTERVAL_MINUTES,
     QUEUE_SPEED_FRACTION,
+    JsonObject,
     Panel,
     PanelReleaseSlice,
     QueueCondition,
@@ -410,20 +410,20 @@ def _predict_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
     target_templates_by_split: Mapping[Split, table_types.QueueFrame],
-    *,
-    parameters: QueueParameters,
+    solution_parameters: JsonObject,
 ) -> dict[Split, table_types.QueueFrame]:
     """Fit one panel and forecast only the requested windows from their histories.
 
     Args:
-        release_slice: Published tables, historical date limits, settings, and seed.
+        release_slice: Published tables, historical date limits, and seed.
         panel: Mainline panel whose model and topology are used.
         target_templates_by_split: Requested complete queue-window target grids.
-        parameters: Validated LightGBM training and calibration settings.
+        solution_parameters: JSON settings validated as ``QueueParameters``.
 
     Returns:
         One complete binary queue-prediction table per requested split.
     """
+    parameters = QueueParameters.model_validate(solution_parameters)
     panel_data = release_slice.panel_slices_by_panel[panel]
     network = queue_network(panel_data.network)
     fitted = _fit_models(
@@ -523,21 +523,22 @@ def queue(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, table_types.QueueFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, table_types.QueueFrame]]:
     """Train and forecast all requested Task 2 panels through the runner contract.
 
     Args:
-        release_slice: Selected released inputs, earlier historical labels, and
-            ``QueueParameters`` supplied through ``release_slice.parameters``.
+        release_slice: Selected released inputs and earlier historical labels.
         target_templates_by_panel_and_split: Zero-filled queue rows grouped by panel
             and split. Every supplied row is predicted, without evaluation sampling.
+        solution_parameters: JSON settings validated as ``QueueParameters``.
 
     Returns:
         Complete official-shaped binary queue predictions by panel and split.
     """
-    parameters = QueueParameters.model_validate(release_slice.parameters)
     return map_panels(
         release_slice,
         target_templates_by_panel_and_split,
-        partial(_predict_panel, parameters=parameters),
+        solution_parameters,
+        _predict_panel,
     )

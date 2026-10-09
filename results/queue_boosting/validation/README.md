@@ -1,21 +1,28 @@
 # Official Kaggle validation result
 
-Both uploads were accepted and graded on 7 October 2026. The Kaggle CLI is
-authenticated. Public scores evaluate March 2031; private April scores remain
-withheld.
+Public scores evaluate March 2031; private April scores remain withheld. Task 2
+candidate uploads from 9 October use zero outputs for Tasks 1 and 4, so their
+composite scores isolate the Task 2 contribution.
 
 The subsequent [baseline, history comparison, and repair assessment](assessment.md)
 records persistence at `0.30170` queue IoU and the corrected 28-day model at
 `0.43440`. Sixteen malformed local Task 1 templates have been restored from
 official copies with backups. A zero-filled comparison export was discarded.
-The later [selector-aware candidate](event_aware/README.md) has complete
-predictions but no official score because the daily Kaggle submission limit was
-exhausted.
+The [selector-aware candidate](event_aware/README.md) and its all-horizons
+ablation both have official public scores.
 
 | Upload | Kaggle reference | Public composite score |
 | --- | ---: | ---: |
 | Queue boosting, other task outputs zero | 56917601 | 0.13514 |
+| Selector-aware, onset at T+30 | 57007109 | 0.21532 |
+| Selector-aware, onset at all horizons | 57007717 | 0.21119 |
 | All-zero control | 56917634 | 0.00000 |
+
+Because the other task outputs are zero, the candidate scores correspond to
+approximately `0.71773` and `0.70397` Task 2 IoU, respectively. The T+30
+candidate leads the controlled all-horizons ablation by `0.00413` composite,
+about `0.01377` Task 2 IoU. See the [follow-up experiment report](experiments_2026-10-09.md)
+for the comparison details.
 
 Only the queue predictions differ between the two uploads. Every official queue
 window contains a positive future queue cell, so an all-clear queue control has

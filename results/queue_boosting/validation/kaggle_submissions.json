@@ -1,5 +1,23 @@
 [
   {
+    "ref": 57007717,
+    "fileName": "task2_all_steps_candidate.csv",
+    "date": "2026-10-09T11:41:25.363000",
+    "description": "Ablation: onset allowed at all six horizons",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.21119",
+    "privateScore": ""
+  },
+  {
+    "ref": 57007109,
+    "fileName": "task2_t30_candidate.csv",
+    "date": "2026-10-09T11:19:18.473000",
+    "description": "Selector-aware Task 2: onset at T+30",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.21532",
+    "privateScore": ""
+  },
+  {
     "ref": 56918669,
     "fileName": "recent_verified.csv",
     "date": "2026-10-07T18:19:24.967000",

@@ -1,0 +1,5 @@
+solution,queue_proxy_iou,onset_iou,ongoing_iou
+queue_boosting,0.671153,0.499057,0.843249
+queue_boosting_event_aware,0.589187,0.335471,0.842903
+queue_boosting_event_aware_all_steps,0.696647,0.550392,0.842903
+queue_boosting_context,0.576542,0.329019,0.824065

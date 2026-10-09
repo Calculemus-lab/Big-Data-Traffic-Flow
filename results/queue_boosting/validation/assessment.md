@@ -10,6 +10,8 @@ displayed public composite score.
 | Persistence | Latest released history reading | 0.09051 | 0.30170 |
 | Queue boosting | June 2030 through February 2031 | 0.13514 | 0.45047 |
 | Queue boosting | February 2031 only | 0.13032 | 0.43440 |
+| Selector-aware, onset at T+30 | June 2030 through February 2031 | 0.21532 | 0.71773 |
+| Selector-aware, onset at all horizons | June 2030 through February 2031 | 0.21119 | 0.70397 |
 
 The nine-month model improves over persistence by approximately 0.14877 queue
 IoU, or 49% relative. The 28-day variant is slightly worse. This experiment does
@@ -18,12 +20,13 @@ gap. Seeds and sampling differ between the fits, so one comparison does not
 fully isolate causality.
 
 Local persistence averaged approximately 0.36 across December and January;
-local queue boosting averaged approximately 0.69. The model has a much larger
-official-score drop than persistence. Its proxy validation is too optimistic to
-use as a direct estimate of competition performance. Recorded-measurement proxy
-labels, generated versus official window selection, and the independently
-generated March scenario can all affect the comparison. Hidden answers prevent
-assigning the discrepancy to one of these factors from aggregate scores alone.
+local queue boosting averaged approximately 0.69. Proxy validation is too
+optimistic to use as a direct estimate of competition performance. The newer
+selector-aware candidates substantially improve the official score, with
+T+30-only decoding modestly ahead of the all-horizons ablation. Recorded-
+measurement proxy labels and generated versus official window selection still
+limit direct comparisons. Hidden answers prevent assigning the remaining gap to
+one factor from aggregate scores alone.
 
 The model may overfit recurring training traffic patterns. No direct use of
 prediction-period labels was found: historical cutoffs are tested, and every
@@ -31,23 +34,18 @@ official validation history has twelve readings from T-60 through T-5. Original
 model and persistence upload values were checked against their prediction files,
 with zero mismatches across 174,000 queue rows each.
 
-## Confirmed forecasting weakness
+## Earlier-model forecasting weakness
 
 The nine-month model predicts no queue in 14 of the 40 validation onset windows.
 The recent-history model does so in 16. Every official window contains a future
 queue, so those empty forecasts necessarily score zero. Neither model has empty
 ongoing forecasts.
 
-Training includes general sliding histories, including periods with no future
-queue. Official forecasts are selected event windows with a guaranteed positive
-future. The next experiment should align training and calibration with that
-selection, use the provided event information, and decode nonempty queue sets
-against window IoU rather than relying only on independent cell thresholds.
-
-Validation should use released train windows where possible, rolling historical
-cutoffs, matched deployment settings, and separate onset/ongoing reporting.
-Labels remain proxies where official answers are unavailable. More architecture
-or parameter searches should follow this evaluation work.
+Selector-aware training and event information improve on this earlier model.
+The T+30-only versus all-horizons submission is a controlled public validation
+comparison; T+30 is the current choice. Further work should compare errors by
+panel and condition and use local proxy scores as diagnostics, not as estimates
+of leaderboard performance.
 
 ## R20 origin and repair
 

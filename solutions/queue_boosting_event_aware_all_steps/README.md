@@ -6,5 +6,7 @@ onset windows, it allows thresholded predictions at all six forecast steps;
 the onset-specific classifier still replaces the T+30 probability. Historical
 threshold calibration uses the same unrestricted decoder.
 
-Compare its Task 2-only validation score with the T+30-only candidate. All
-other task outputs and model settings should remain identical.
+Its official Task 2-only validation score is approximately 0.70397, compared
+with 0.71773 for the T+30-only candidate. The T+30 restriction performs better
+on the public validation split, while this variant scores higher on the small
+random local proxy case.

@@ -1,17 +1,24 @@
 # Task 2 queue forecasting results
 
-The previously submitted model scored approximately `0.45047` Task 2 IoU on the
-official March validation windows. It remains in `solutions/queue_boosting`;
-its score and upload are recorded in the [validation report](validation/README.md).
-The selector-aware experiment is isolated in
-`solutions/queue_boosting_event_aware`. Its official predictions were prepared,
-but today's Kaggle submission limit prevented an official score.
+The earlier model scored approximately `0.45047` Task 2 IoU on the official
+March validation windows. The selector-aware event model scored approximately
+`0.71773`; its all-horizons ablation scored approximately `0.70397`. The Kaggle
+references and derivation are recorded in the
+[validation report](validation/README.md).
 
 Both models use causal traffic, network, ramp, link, and clock features.
 Historical Task 1 answers are restored before deriving training labels;
 prediction-month answers are never used for fitting or calibration. The
-experimental model adds a selector-matched onset head and predicts those
+event-aware model adds a selector-matched onset head and predicts those
 windows only at T+30, with a positive-window fallback.
+
+The newest focused local comparison is summarized in
+[`selector_matched_proxy_check.md`](selector_matched_proxy_check.md). On the
+same ten D12_I5_N December proxy windows, the all-horizons onset ablation scores
+0.69665, the original model 0.67115, and the T+30 candidate 0.58919. The local
+proxy sampler does not reproduce the official onset distribution, so these
+numbers do not overturn the official validation comparison. The three-hour
+context experiment scored 0.57654 and is not retained as a solution package.
 
 ## Competition code findings
 
