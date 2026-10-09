@@ -99,9 +99,9 @@ def prepare_command(
     ] = None,
     profile: Literal["quick", "full"] = "quick",
     benchmark_directory: Annotated[Path | None, typer.Option("--output")] = None,
-    cv_scheme_file: Annotated[
+    benchmark_scheme_file: Annotated[
         Path, typer.Option("--scheme", exists=True, file_okay=True, dir_okay=False)
-    ] = Path("config/cv_scheme.yaml"),
+    ] = Path("config/benchmark_scheme.yaml"),
     panels: Annotated[list[str], typer.Option("--panel", "-p")] = [],  # noqa: B006
 ) -> None:
     """Generate reproducible experiment cases from the public train split.
@@ -114,7 +114,7 @@ def prepare_command(
         prediction_start_date: First target date, defaulting to history end.
         profile: Named panel-selection and case-generation configuration.
         benchmark_directory: Output directory for prepared cases.
-        cv_scheme_file: YAML file defining queue and ODME case settings.
+        benchmark_scheme_file: YAML file defining queue and ODME case settings.
         panels: Optional panel names. An empty list uses the profile selection.
     """
     from .prepare import prepare
@@ -123,7 +123,7 @@ def prepare_command(
         release_directory=release_directory,
         benchmark_directory=benchmark_directory or Path("data/benchmarks") / profile,
         profile=profile,
-        cv_scheme_file=cv_scheme_file,
+        benchmark_scheme_file=benchmark_scheme_file,
         history_start_date=history_start_date,
         history_end_date=history_end_date,
         prediction_start_date=prediction_start_date,

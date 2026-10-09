@@ -168,7 +168,7 @@ panels. Prepare another case if you want to compare a different date interval.
 Run this command from the repository root. `--data` points to the extracted
 release. The four date options define the history and prediction periods shown
 above. `--profile quick` selects one panel; `--profile full` selects all ten.
-`--scheme config/cv_scheme.yaml` selects the default YAML settings for choosing
+`--scheme config/benchmark_scheme.yaml` selects the default YAML settings for choosing
 queue windows and generating Task 4 cases:
 
 ```sh
@@ -177,7 +177,7 @@ uv run --locked bench prepare --data kaggle_public \
   --history-end-date 2030-11-20 \
   --prediction-start-date 2030-11-24 \
   --prediction-end-date 2030-12-01 \
-  --profile quick --scheme config/cv_scheme.yaml \
+  --profile quick --scheme config/benchmark_scheme.yaml \
   --output data/benchmarks/november
 ```
 
@@ -186,7 +186,7 @@ The default `quick` profile selects `D12_I5_N`; `full` selects all panels. Use
 case is written; without it, output goes to `data/benchmarks/<profile>`.
 
 `--scheme PATH` selects a YAML file that controls local case generation. If
-the option is omitted, Trafficbench reads `config/cv_scheme.yaml` from the
+the option is omitted, Trafficbench reads `config/benchmark_scheme.yaml` from the
 repository root. The file records the random seed, Task 2 window count, spacing
 and coverage rules, and Task 4 generated-case count and noise settings. Its
 default selects five Task 2 windows for each condition, requires at least 70%
