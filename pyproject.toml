@@ -16,6 +16,8 @@ dependencies = [
     "typer>=0.20,<1",
     "polars>=1.37,<2",
     "tzdata>=2026.5",
+    "torch",
+    "tqdm>=4.70.1",
 ]
 
 [dependency-groups]
@@ -55,6 +57,14 @@ indent-style = "space"
 
 [tool.uv]
 required-version = "==0.12.5"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
 
 [tool.pyright]
 typeCheckingMode = "standard"
