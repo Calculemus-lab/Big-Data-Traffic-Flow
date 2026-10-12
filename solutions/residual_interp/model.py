@@ -22,6 +22,7 @@ from trafficbench.contracts import (
     KEYS,
     QUEUE_INTERVAL_MINUTES,
     VALUES,
+    JsonObject,
     Panel,
     ReleasePackageSlice,
     Split,
@@ -63,12 +64,14 @@ def state(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, table_types.StateFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, table_types.StateFrame]]:
     """Predict Task 1 speed and flow as profile + interpolated residual."""
-    p = Parameters.model_validate(dict(release_slice.parameters))
+    p = Parameters.model_validate(solution_parameters)
     return map_panels(
         release_slice,
         target_templates_by_panel_and_split,
+        solution_parameters,
         partial(_state_for_panel, p=p),
     )
 
@@ -77,6 +80,7 @@ def _state_for_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
     target_templates_by_split: Mapping[Split, table_types.StateFrame],
+    solution_parameters: JsonObject,
     *,
     p: Parameters,
 ) -> dict[Split, table_types.StateFrame]:
