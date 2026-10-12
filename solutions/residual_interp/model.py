@@ -1,21 +1,21 @@
 """Statistical approach that:
-1) Improves the provided baseline 
+1) Improves the provided baseline
 2) On top of that interpolates the same-day residuals
 
 Local experiment:  bench experiment residual_interp --task state --benchmark data/benchmarks/quick
 Tune:              ... --params '{"tau": 20, "flow_mode": "mult"}'
 Release targets:   bench run residual_interp --task state --target-range validation
 """
- 
+
 from __future__ import annotations
- 
+
 from collections.abc import Mapping
 from functools import partial
 from typing import Literal
- 
+
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
- 
+
 from solutions import baseline
 from trafficbench import table_types
 from trafficbench.contracts import (
@@ -27,16 +27,16 @@ from trafficbench.contracts import (
     Split,
 )
 from trafficbench.panelwise import map_panels
- 
+
 SERIES = ["station_id", "link_id"]
 CELL = ["timestamp", "station_id", "link_id"]
 SLOTS_PER_DAY = 24 * 60 // QUEUE_INTERVAL_MINUTES  # 288 five-minute slots
 STEP_SECONDS = QUEUE_INTERVAL_MINUTES * 60
- 
- 
+
+
 class Parameters(BaseModel):
     """Validated settings. Unknown keys are rejected to catch typos in --params.
- 
+
     Attributes:
         smooth: Average each profile slot with +-k neighbouring slots.
         half_life_days: Weight of a day halves every this many days (0 = equal).
@@ -46,7 +46,7 @@ class Parameters(BaseModel):
         speed_mode, flow_mode: Additive or multiplicative (log-ratio) deviation.
         offset: Added before ratios in multiplicative mode so low values stay stable.
     """
- 
+
     model_config = ConfigDict(strict=True, extra="forbid")
     smooth: int = Field(default=1, ge=0, le=12)
     half_life_days: float = Field(default=56, ge=0)
@@ -56,8 +56,8 @@ class Parameters(BaseModel):
     speed_mode: Literal["add", "mult"] = "add"
     flow_mode: Literal["add", "mult"] = "mult"
     offset: float = Field(default=100.0, gt=0)
- 
- 
+
+
 def state(
     release_slice: ReleasePackageSlice,
     target_templates_by_panel_and_split: dict[
@@ -71,8 +71,8 @@ def state(
         target_templates_by_panel_and_split,
         partial(_state_for_panel, p=p),
     )
- 
- 
+
+
 def _state_for_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
@@ -84,7 +84,7 @@ def _state_for_panel(
     # Task 1 answers restored. Masked cells have null speed/flow.
     observations = baseline.state_observations(release_slice, panel)
     profile, link_means, panel_means = _fit_profile(observations, p)
- 
+
     # Interpolate on every observed cell once; targets then just look up their row.
     obs = _add_profile(observations, profile, link_means, panel_means, p).sort(
         [*SERIES, "timestamp"]
@@ -97,7 +97,7 @@ def _state_for_panel(
         _interpolate("speed_kmh", p.speed_mode, p).alias("pred_speed_kmh"),
         _interpolate("flow_vph", p.flow_mode, p).alias("pred_flow_vph"),
     ).select([*CELL, "pred_speed_kmh", "pred_flow_vph"])
- 
+
     predictions: dict[Split, table_types.StateFrame] = {}
     for split, template in target_templates_by_split.items():
         targets = _add_profile(
@@ -118,8 +118,8 @@ def _state_for_panel(
             .lazy()
         )
     return predictions
- 
- 
+
+
 def _day_slot(p: Parameters) -> list[pl.Expr]:
     weekday = pl.col("timestamp").dt.weekday()  # 1 = Monday ... 7 = Sunday
     day = (
@@ -132,8 +132,8 @@ def _day_slot(p: Parameters) -> list[pl.Expr]:
         + pl.col("timestamp").dt.minute().cast(pl.Int32) // QUEUE_INTERVAL_MINUTES
     )
     return [day.cast(pl.Int32).alias("day"), slot.alias("slot")]
- 
- 
+
+
 def _fit_profile(
     observations: pl.DataFrame, p: Parameters
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
@@ -151,7 +151,7 @@ def _fit_profile(
         tr = tr.with_columns((0.5 ** (age_days / p.half_life_days)).alias("w"))
     else:
         tr = tr.with_columns(pl.lit(1.0).alias("w"))
- 
+
     keys = [*SERIES, "day", "slot"]
     sums = tr.group_by(keys).agg(
         pl.col("w").sum().alias("sw"),
@@ -175,8 +175,8 @@ def _fit_profile(
     )
     panel_means = tr.select(pl.col(v).mean().alias(f"panel_{v}") for v in values)
     return profile, link_means, panel_means
- 
- 
+
+
 def _add_profile(
     frame: pl.DataFrame,
     profile: pl.DataFrame,
@@ -204,13 +204,13 @@ def _add_profile(
             *[f"panel_{v}" for v in values],
         )
     )
- 
- 
+
+
 def _interpolate(value: str, mode: str, p: Parameters) -> pl.Expr:
     """Profile + residual from the nearest anchors before/after on the same series."""
     prof, obs_value, c = pl.col(f"p_{value}"), pl.col(value), p.offset
     anchor = pl.col("pct_observed").ge(p.min_pct) & obs_value.is_not_null()
- 
+
     if mode == "mult":
         resid = (
             (obs_value.clip(lower_bound=0) + c) / (prof.clip(lower_bound=0) + c)
@@ -219,7 +219,7 @@ def _interpolate(value: str, mode: str, p: Parameters) -> pl.Expr:
         resid = obs_value - prof
     r = pl.when(anchor).then(resid)
     t = pl.when(anchor).then(pl.col("step"))
- 
+
     prev_r, next_r = r.forward_fill().over(SERIES), r.backward_fill().over(SERIES)
     prev_t, next_t = t.forward_fill().over(SERIES), t.backward_fill().over(SERIES)
     w_prev = (-(pl.col("step") - prev_t) / p.tau).exp().fill_null(0.0)
@@ -230,7 +230,7 @@ def _interpolate(value: str, mode: str, p: Parameters) -> pl.Expr:
     ) / pl.when(total > 0).then(total)
     # Shrink toward the profile (residual 0) when the nearest anchor is far away.
     r_hat = (blended * pl.max_horizontal(w_prev, w_next)).fill_null(0.0)
- 
+
     if mode == "mult":
         pred = (prof.clip(lower_bound=0) + c) * r_hat.clip(-1.6, 1.6).exp() - c
     else:
