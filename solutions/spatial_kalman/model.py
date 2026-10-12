@@ -50,7 +50,14 @@ from solutions.residual_interp.model import (
     _fit_profile,  # pyright: ignore[reportPrivateUsage]
 )
 from trafficbench import table_types
-from trafficbench.contracts import KEYS, VALUES, Panel, ReleasePackageSlice, Split
+from trafficbench.contracts import (
+    KEYS,
+    VALUES,
+    JsonObject,
+    Panel,
+    ReleasePackageSlice,
+    Split,
+)
 from trafficbench.panelwise import map_panels
 
 FloatArray = NDArray[np.float64]
@@ -98,12 +105,14 @@ def state(
     target_templates_by_panel_and_split: dict[
         Panel, dict[Split, table_types.StateFrame]
     ],
+    solution_parameters: JsonObject,
 ) -> dict[Panel, dict[Split, table_types.StateFrame]]:
     """Predict Task 1 speed and flow: profile + time smoother + spatial correction."""
-    p = SpatialParameters.model_validate(dict(release_slice.parameters))
+    p = SpatialParameters.model_validate(solution_parameters)
     return map_panels(
         release_slice,
         target_templates_by_panel_and_split,
+        solution_parameters,
         partial(_state_for_panel, p=p),
     )
 
@@ -112,6 +121,7 @@ def _state_for_panel(
     release_slice: ReleasePackageSlice,
     panel: Panel,
     target_templates_by_split: Mapping[Split, table_types.StateFrame],
+    solution_parameters: JsonObject,
     *,
     p: SpatialParameters,
 ) -> dict[Split, table_types.StateFrame]:
