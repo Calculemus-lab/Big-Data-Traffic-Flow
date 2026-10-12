@@ -32,8 +32,8 @@ from solutions.residual_interp.model import (
     SERIES,
     STEP_SECONDS,
     Parameters,
-    _add_profile,  
-    _fit_profile,  
+    _add_profile,
+    _fit_profile,
 )
 from trafficbench import table_types
 from trafficbench.contracts import KEYS, VALUES, Panel, ReleasePackageSlice, Split
@@ -178,7 +178,9 @@ def _lag_moment(y: FloatArray, k: int) -> tuple[FloatArray, FloatArray]:
     return total, count
 
 
-def _fit_ar1(y: FloatArray, p: KalmanParameters) -> tuple[FloatArray, FloatArray, FloatArray]:
+def _fit_ar1(
+    y: FloatArray, p: KalmanParameters
+) -> tuple[FloatArray, FloatArray, FloatArray]:
     """Fit phi, process noise q and measurement noise r for each column.
 
     Uses autocovariances gamma(0), gamma(k), gamma(2k) of the observed
@@ -189,13 +191,19 @@ def _fit_ar1(y: FloatArray, p: KalmanParameters) -> tuple[FloatArray, FloatArray
     k = p.fit_lag
     moments = [_lag_moment(y, lag) for lag in (0, k, 2 * k)]
 
-    def estimate(sums: list[FloatArray], counts: list[FloatArray]) -> tuple[FloatArray, ...]:
-        g0, gk, g2k = (s / np.maximum(c, 1.0) for s, c in zip(sums, counts, strict=True))
+    def estimate(
+        sums: list[FloatArray], counts: list[FloatArray]
+    ) -> tuple[FloatArray, ...]:
+        g0, gk, g2k = (
+            s / np.maximum(c, 1.0) for s, c in zip(sums, counts, strict=True)
+        )
         g0 = np.maximum(g0, 1e-9)
         if p.phi is not None:
             phi = np.full_like(g0, p.phi)
         else:
-            ratio = np.where((gk > 0) & (g2k > 0), g2k / np.where(gk > 0, gk, 1.0), np.nan)
+            ratio = np.where(
+                (gk > 0) & (g2k > 0), g2k / np.where(gk > 0, gk, 1.0), np.nan
+            )
             phi = np.clip(np.power(ratio, 1.0 / k), 0.5, 0.9995)
             phi = np.where(np.isfinite(phi), phi, 0.95)
         signal = np.clip(np.where(gk > 0, gk, 0.5 * g0) / phi**k, 0.05 * g0, 0.99 * g0)
@@ -208,12 +216,19 @@ def _fit_ar1(y: FloatArray, p: KalmanParameters) -> tuple[FloatArray, FloatArray
         [np.atleast_1d(m[1].sum()) for m in moments],
     )
     enough = np.minimum(moments[1][1], moments[2][1]) >= p.min_pairs
-    phi, q, r = (np.where(enough, col, pool[0]) for col, pool in zip(per_column, pooled, strict=True))
+    phi, q, r = (
+        np.where(enough, col, pool[0])
+        for col, pool in zip(per_column, pooled, strict=True)
+    )
     return phi, q, r
 
 
 def _rts_smooth(
-    y: FloatArray, noise_scale: FloatArray, phi: FloatArray, q: FloatArray, r: FloatArray
+    y: FloatArray,
+    noise_scale: FloatArray,
+    phi: FloatArray,
+    q: FloatArray,
+    r: FloatArray,
 ) -> FloatArray:
     """Kalman filter + RTS smoother, vectorised across columns (station series).
 
