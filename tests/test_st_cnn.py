@@ -338,3 +338,116 @@ def test_chunked_prediction_matches_a_direct_pass() -> None:
     chunked = model.predict(net, pool, norm, chunk=70)
     assert receptive_steps() < 70 and np.isfinite(chunked).all()
     np.testing.assert_allclose(chunked, direct, atol=1e-4)
+
+
+def test_all_cycle_two_settings_run_together(
+    benchmark_directory: Path, tmp_path: Path
+) -> None:
+    settings: JsonObject = {
+        **FAST,
+        "blackout_rate": 0.5,
+        "blackout_check": 2,
+        "ensemble": 2,
+        "low_quality_inputs": True,
+        "leave_day_out": True,
+    }
+    metrics = run_metrics(benchmark_directory, tmp_path, settings)
+    assert 0 < metrics["state_score"] <= 1
+
+
+def test_ensemble_changes_and_repeats_the_prediction(
+    benchmark_directory: Path, tmp_path: Path
+) -> None:
+    single = run_metrics(benchmark_directory, tmp_path / "a", FAST)
+    pair = run_metrics(benchmark_directory, tmp_path / "b", {**FAST, "ensemble": 2})
+    again = run_metrics(benchmark_directory, tmp_path / "c", {**FAST, "ensemble": 2})
+    assert pair["speed_rmse"] != single["speed_rmse"]
+    assert pair["speed_rmse"] == again["speed_rmse"]
+
+
+def test_blackout_augmentation_hides_one_full_block() -> None:
+    rng = np.random.default_rng(0)
+    values = rng.normal(100, 10, (2, 96, 6))
+    profile = np.full_like(values, 90.0)
+    norm = Normalization(np.ones(2), np.zeros(2), np.ones(2))
+    parameters = model.StCnnParameters(batch=4, window=96, blackout_rate=1.0)
+    pools = [model.Pool(values, profile, MONDAY_STEP)]
+    _, _, masks = next(model.batches(pools, parameters, norm, rng))
+    for hidden in masks.numpy().astype(bool):
+        full_rows = hidden.all(axis=1)
+        runs = np.convolve(full_rows, np.ones(model.BLACKOUT_STEPS), mode="valid")
+        assert runs.max() == model.BLACKOUT_STEPS
+
+
+def test_blackout_starts_are_reproducible_daytime_target_days() -> None:
+    target_steps = MONDAY_STEP + np.arange(3 * STEPS_PER_DAY)
+    starts = model.blackout_starts("D12_I5_N", target_steps, 5)
+    assert np.array_equal(starts, model.blackout_starts("D12_I5_N", target_steps, 5))
+    assert not np.array_equal(
+        starts, model.blackout_starts("D7_I10_E", target_steps, 5)
+    )
+    _, slot = weekday_and_slot(starts)
+    assert ((slot >= 72) & (slot < 240)).all()
+    assert set(starts // STEPS_PER_DAY) <= set(target_steps // STEPS_PER_DAY)
+
+
+def test_blackout_check_blanks_evaluation_inputs(
+    benchmark_directory: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pools_seen: list[list[model.Pool]] = []
+
+    def record_pools(pools: list[model.Pool], *_: object) -> Imputer:
+        pools_seen.append(pools)
+        return zero_network()
+
+    monkeypatch.setattr(model, "fit", record_pools)
+    run_metrics(benchmark_directory, tmp_path, {**FAST, "blackout_check": 3})
+    evaluation = pools_seen[-1][1]
+    targets = pl.read_parquet(next(benchmark_directory.rglob("state/targets.parquet")))
+    target_steps = targets.select(epoch_step())["step"].to_numpy()
+    for start in model.blackout_starts("D12_I5_N", target_steps, 3):
+        rows = slice(start - evaluation.first_step, start - evaluation.first_step + 18)
+        assert np.isnan(evaluation.values[:, rows]).all()
+
+
+def test_low_quality_grid_holds_only_partial_coverage_cells() -> None:
+    data = mainline(
+        [
+            ("2030-01-01T00:00:00", "S_A", "A", 50.0, 1000.0, 50),
+            ("2030-01-01T00:05:00", "S_A", "A", 60.0, 1000.0, 100),
+            ("2030-01-01T00:10:00", "S_A", "A", 70.0, 1000.0, 0),
+        ]
+    )
+    corridor = single_link_corridor()
+    first, count = step_range([data])
+    weak = to_grid(data, first, count, corridor, low_quality=True)
+    eligible = to_grid(data, first, count, corridor)
+    assert weak[0, :, 0].tolist()[0] == 50 and np.isnan(weak[0, 1:, 0]).all()
+    assert np.isnan(eligible[0, 0, 0]) and eligible[0, 1, 0] == 60
+
+
+def test_features_add_low_quality_channels() -> None:
+    values = np.full((2, 4, 3), 7.0)
+    visible = np.ones((4, 3), bool)
+    weak = np.full((2, 4, 3), np.nan)
+    weak[:, 2, 1] = 9.0
+    norm = Normalization(np.array([2.0, 4.0]), np.zeros(2), np.ones(2))
+    x = features(values, visible, np.ones((2, 4, 3)), MONDAY_STEP, norm, weak)
+    assert x.shape == (10, 4, 3)
+    assert x[7, 2, 1] == 4 and x[8, 2, 1] == 2 and x[9].sum() == 1
+
+
+def test_leave_day_out_matches_refitting_without_that_day() -> None:
+    rng = np.random.default_rng(1)
+    count = 21 * STEPS_PER_DAY
+    grid = rng.normal(100, 10, (2, count, 2))
+    grid[rng.random(grid.shape) < 0.2] = np.nan
+    left_out = Profile(grid, MONDAY_STEP, half_width=2).without_own_day(
+        grid, MONDAY_STEP
+    )
+    for day in [0, 9, 20]:
+        rows = slice(day * STEPS_PER_DAY, (day + 1) * STEPS_PER_DAY)
+        without = grid.copy()
+        without[:, rows] = np.nan
+        refit = Profile(without, MONDAY_STEP, half_width=2)(MONDAY_STEP, count)
+        np.testing.assert_allclose(left_out[:, rows], refit[:, rows], rtol=1e-9)

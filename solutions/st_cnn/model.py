@@ -11,6 +11,7 @@ Competition rows: ``bench run st_cnn --task state --target-range validation``.
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Iterator, Mapping
 from datetime import UTC, date, datetime
 from functools import partial
@@ -36,9 +37,11 @@ from trafficbench.panelwise import map_panels
 from .grid import (
     SERIES,
     STEP_SECONDS,
+    STEPS_PER_DAY,
     BoolArray,
     Corridor,
     FloatArray,
+    IntArray,
     Normalization,
     Profile,
     build_corridor,
@@ -51,6 +54,8 @@ from .grid import (
 from .net import Imputer, receptive_steps
 
 RATES = (0.2, 0.3, 0.5)
+# Validation and private blank the 30-minute Task 2 horizon plus the following hour.
+BLACKOUT_STEPS = 18
 OBSERVATION_COLUMNS = ["timestamp", *SERIES, "speed_kmh", "flow_vph", "pct_observed"]
 
 
@@ -68,6 +73,15 @@ class StCnnParameters(BaseModel):
         device: Torch device; ``auto`` picks MPS when available.
         log_every: Print the running loss every this many steps; 0 is silent.
         seed: Offset on the benchmark seed, for seed-spread runs.
+        blackout_rate: Chance that a training crop also loses every visible cell
+            in one random 90-minute block, as around Task 2 windows.
+        blackout_check: Number of simulated 90-minute blackouts blanked in the
+            evaluation inputs of each panel, to measure blackout robustness.
+        ensemble: Number of models trained with consecutive seeds and averaged.
+        low_quality_inputs: Feed cells with partial coverage (below the
+            eligibility threshold) as flagged inputs. They are never targets.
+        leave_day_out: Build training residuals against a profile that leaves
+            out each cell's own day, as at prediction time.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
@@ -81,14 +95,23 @@ class StCnnParameters(BaseModel):
     device: Literal["auto", "cpu", "mps", "cuda"] = "auto"
     log_every: int = Field(default=250, ge=0)
     seed: int = 0
+    blackout_rate: float = Field(default=0.0, ge=0, le=1)
+    blackout_check: int = Field(default=0, ge=0)
+    ensemble: int = Field(default=1, gt=0)
+    low_quality_inputs: bool = False
+    leave_day_out: bool = False
 
 
 class Pool(NamedTuple):
-    """One period of grid values, its profile and its first step."""
+    """One period of grid values, its profile, first step and optional weak inputs.
+
+    ``low_quality`` holds partial-coverage cells when ``low_quality_inputs`` is on.
+    """
 
     values: FloatArray
     profile: FloatArray
     first_step: int
+    low_quality: FloatArray | None = None
 
 
 def pick_device(name: str) -> str:
@@ -133,9 +156,19 @@ def batches(
             values, profile = pool.values[:, crop], pool.profile[:, crop]
             visible = ~np.isnan(values[0])
             hidden = hide(visible, rng)
+            if parameters.blackout_rate and rng.random() < parameters.blackout_rate:
+                blackout = int(rng.integers(0, max(length - BLACKOUT_STEPS, 0) + 1))
+                rows = slice(blackout, blackout + BLACKOUT_STEPS)
+                hidden[rows] = visible[rows]
+            weak = None if pool.low_quality is None else pool.low_quality[:, crop]
             inputs.append(
                 features(
-                    values, visible & ~hidden, profile, pool.first_step + start, norm
+                    values,
+                    visible & ~hidden,
+                    profile,
+                    pool.first_step + start,
+                    norm,
+                    weak,
                 )
             )
             targets.append(np.nan_to_num(values - profile).astype(np.float32))
@@ -154,7 +187,8 @@ def fit(
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     device = pick_device(parameters.device)
-    net = Imputer(7, parameters.width).to(device)
+    net = Imputer(10 if parameters.low_quality_inputs else 7, parameters.width)
+    net = net.to(device)
     optimizer = torch.optim.AdamW(net.parameters(), lr=parameters.lr, weight_decay=1e-4)
     schedule = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, max_lr=parameters.lr, total_steps=max(parameters.steps, 2)
@@ -195,18 +229,42 @@ def predict(
             min(total, start + chunk + pad),
             min(total, start + chunk),
         )
+        weak = None if pool.low_quality is None else pool.low_quality[:, low:high]
         inputs = features(
             pool.values[:, low:high],
             visible[low:high],
             pool.profile[:, low:high],
             pool.first_step + low,
             norm,
+            weak,
         )
         output = net(torch.from_numpy(inputs)[None].to(device))[0].cpu().numpy()
         out[:, start:end] = (
             output[:, start - low : end - low] * norm.residual[:, None, None]
         )
     return pool.profile + out
+
+
+def blackout_starts(panel: str, target_steps: IntArray, count: int) -> IntArray:
+    """Return reproducible first blanked steps of simulated Task 2 blackouts.
+
+    Each blackout starts on a target day between 06:00 and 20:00 UTC and lasts
+    ``BLACKOUT_STEPS``. The choice depends only on the panel name and the
+    target days, so an analysis can recompute the same rows.
+
+    Args:
+        panel: Panel name, used to seed the choice.
+        target_steps: Epoch steps of the requested target rows.
+        count: Number of blackouts.
+
+    Returns:
+        Sorted epoch steps of each blackout's first blanked row.
+    """
+    rng = np.random.default_rng(zlib.crc32(panel.encode()))
+    days = np.unique(target_steps // STEPS_PER_DAY)
+    chosen_days = rng.choice(days, size=count, replace=count > len(days))
+    slots = rng.integers(6 * 12, 20 * 12, size=count)
+    return np.sort(chosen_days * STEPS_PER_DAY + slots)
 
 
 def first_step_of(day: date) -> int:
@@ -282,10 +340,11 @@ def panel_observations(
 
 
 def build_pools(
+    panel: Panel,
     panel_data: PanelReleaseSlice,
     history_end: int,
     targets: list[pl.DataFrame],
-    smooth: int,
+    parameters: StCnnParameters,
 ) -> tuple[Corridor, Pool, Pool]:
     """Build the corridor, the history pool and the evaluation pool for one panel.
 
@@ -293,10 +352,11 @@ def build_pools(
     released when this function returns.
 
     Args:
+        panel: Panel name, used to place simulated blackouts.
         panel_data: One panel's lazy release tables and historical labels.
         history_end: First epoch step after the history period.
         targets: Collected target rows of every requested split.
-        smooth: Profile smoothing half-width in slots.
+        parameters: Validated model settings.
 
     Returns:
         The corridor, the history pool and an evaluation pool covering every target.
@@ -314,15 +374,32 @@ def build_pools(
     )
     history_first, history_steps = step_range([history])
     history_grid = to_grid(history, history_first, history_steps, corridor)
-    profile = Profile(history_grid, history_first, smooth)
+    profile = Profile(history_grid, history_first, parameters.smooth)
     eval_first, eval_steps = step_range([evaluation, *targets])
-    history_pool = Pool(
-        history_grid, profile(history_first, history_steps), history_first
+    eval_grid = to_grid(evaluation, eval_first, eval_steps, corridor)
+    if parameters.blackout_check:
+        target_steps = pl.concat([target.select(epoch_step()) for target in targets])
+        for start in blackout_starts(
+            panel, target_steps["step"].to_numpy(), parameters.blackout_check
+        ):
+            rows = slice(start - eval_first, start - eval_first + BLACKOUT_STEPS)
+            eval_grid[:, rows] = np.nan
+    weak_grids = (
+        (
+            to_grid(history, history_first, history_steps, corridor, low_quality=True),
+            to_grid(evaluation, eval_first, eval_steps, corridor, low_quality=True),
+        )
+        if parameters.low_quality_inputs
+        else (None, None)
     )
+    history_profile = (
+        profile.without_own_day(history_grid, history_first)
+        if parameters.leave_day_out
+        else profile(history_first, history_steps)
+    )
+    history_pool = Pool(history_grid, history_profile, history_first, weak_grids[0])
     eval_pool = Pool(
-        to_grid(evaluation, eval_first, eval_steps, corridor),
-        profile(eval_first, eval_steps),
-        eval_first,
+        eval_grid, profile(eval_first, eval_steps), eval_first, weak_grids[1]
     )
     return corridor, history_pool, eval_pool
 
@@ -354,10 +431,11 @@ def state_for_panel(
         split: frame.collect() for split, frame in target_templates_by_split.items()
     }
     corridor, history_pool, eval_pool = build_pools(
+        panel,
         release_slice.panel_slices_by_panel[panel],
         first_step_of(release_slice.history_end_date),
         list(targets.values()),
-        parameters.smooth,
+        parameters,
     )
     norm = Normalization(
         residual=np.maximum(
@@ -367,8 +445,23 @@ def state_for_panel(
         spread=np.maximum(np.nanstd(history_pool.values, axis=(1, 2)), 1.0),
     )
     pools = [history_pool, eval_pool] if parameters.use_eval else [history_pool]
-    net = fit(pools, parameters, norm, release_slice.seed + parameters.seed)
-    prediction = predict(net, eval_pool, norm)
+    # Average independently seeded models; one model reproduces a single fit.
+    prediction = np.mean(
+        [
+            predict(
+                fit(
+                    pools,
+                    parameters,
+                    norm,
+                    release_slice.seed + parameters.seed + index,
+                ),
+                eval_pool,
+                norm,
+            )
+            for index in range(parameters.ensemble)
+        ],
+        axis=0,
+    )
 
     predictions: dict[Split, table_types.StateFrame] = {}
     for split, target in targets.items():

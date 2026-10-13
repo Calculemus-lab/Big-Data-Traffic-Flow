@@ -11,6 +11,7 @@ from typing import NamedTuple
 import numpy as np
 import polars as pl
 from numpy.typing import NDArray
+from scipy.ndimage import convolve1d
 
 from trafficbench.contracts import MIN_OBSERVED_PERCENT
 
@@ -95,17 +96,29 @@ def locate(
 
 
 def to_grid(
-    frame: pl.DataFrame, first_step: int, step_count: int, corridor: Corridor
+    frame: pl.DataFrame,
+    first_step: int,
+    step_count: int,
+    corridor: Corridor,
+    low_quality: bool = False,
 ) -> FloatArray:
-    """Return (2, T, S) speed and per-lane flow, NaN where a cell is not evidence.
+    """Return (2, T, S) speed and per-lane flow, NaN where a cell is not used.
 
-    A cell is evidence when both values are present and at least
-    ``MIN_OBSERVED_PERCENT`` of the interval was observed.
+    By default a cell is used when both values are present and at least
+    ``MIN_OBSERVED_PERCENT`` of the interval was observed (score-eligible
+    evidence). With ``low_quality`` the grid instead holds the cells that have
+    both values but partial coverage below that threshold.
     """
     grid = np.full((2, step_count, len(corridor.lanes)), np.nan)
     time_index, column = locate(frame, first_step, step_count, corridor)
+    coverage = pl.col("pct_observed").fill_null(0)
+    covered = (
+        coverage.is_between(1, MIN_OBSERVED_PERCENT, closed="left")
+        if low_quality
+        else coverage.ge(MIN_OBSERVED_PERCENT)
+    )
     usable = frame.select(
-        pl.col("pct_observed").ge(MIN_OBSERVED_PERCENT).fill_null(False)
+        covered
         & pl.col("speed_kmh").is_not_null()
         & pl.col("flow_vph").is_not_null()
         & pl.col("speed_kmh").is_not_nan()
@@ -166,11 +179,52 @@ class Profile:
         if np.isnan(table).any():
             raise ValueError("No usable history observations for the profile")
         self.table = table
+        self.sums, self.counts, self.half_width = sums, counts, half_width
 
     def __call__(self, first_step: int, step_count: int) -> FloatArray:
         """Return the (2, T, S) profile for consecutive steps from ``first_step``."""
         weekday, slot = weekday_and_slot(first_step + np.arange(step_count))
         return np.moveaxis(self.table[weekday, slot], 0, 1)
+
+    def without_own_day(self, grid: FloatArray, first_step: int) -> FloatArray:
+        """Return the profile at every cell of the fitting grid, leaving out its own day.
+
+        At prediction time the predicted day never contributes to the profile,
+        so training residuals should not either. ``grid`` must be the grid the
+        profile was fitted on, starting at midnight. Cells whose weekday slot has
+        no other observations keep the ordinary profile value.
+
+        Args:
+            grid: The (2, T, S) history grid used to fit this profile.
+            first_step: Epoch step of the grid's first row.
+
+        Returns:
+            A (2, T, S) profile with each cell's own calendar day removed.
+        """
+        channels, step_count, series = grid.shape
+        day_count = -(-step_count // STEPS_PER_DAY)
+        padded = np.full((channels, day_count * STEPS_PER_DAY, series), np.nan)
+        padded[:, :step_count] = grid
+        days = padded.reshape(channels, day_count, STEPS_PER_DAY, series)
+        observed = ~np.isnan(days)
+        # A day's own share of the smoothed table: its +-half_width neighbours
+        # on the same calendar day (slots past midnight belong to other days).
+        window = np.ones(2 * self.half_width + 1)
+        own_sums = convolve1d(
+            np.where(observed, days, 0), window, axis=2, mode="constant"
+        )
+        own_counts = convolve1d(observed.astype(float), window, axis=2, mode="constant")
+        weekday, slot = weekday_and_slot(
+            first_step + np.arange(day_count * STEPS_PER_DAY)
+        )
+        sums = np.moveaxis(self.sums[weekday, slot], 0, 1).reshape(days.shape)
+        counts = np.moveaxis(self.counts[weekday, slot], 0, 1).reshape(days.shape)
+        remaining = counts - own_counts
+        with np.errstate(invalid="ignore", divide="ignore"):
+            left_out = (sums - own_sums) / remaining
+        ordinary = self(first_step, day_count * STEPS_PER_DAY).reshape(days.shape)
+        profile = np.where(remaining > 0, left_out, ordinary)
+        return profile.reshape(channels, -1, series)[:, :step_count]
 
 
 class Normalization(NamedTuple):
@@ -193,8 +247,14 @@ def features(
     profile: FloatArray,
     first_step: int,
     norm: Normalization,
+    low_quality: FloatArray | None = None,
 ) -> NDArray[np.float32]:
-    """Return (7, T, S) inputs: masked residuals, visibility, profile and time of day."""
+    """Return model inputs for one (T, S) window.
+
+    Seven channels: masked residuals (2), visibility, profile level (2) and
+    time of day (2). With ``low_quality`` values, three more channels follow:
+    the residuals of partial-coverage cells (2) and their presence flag.
+    """
     residual = np.where(visible, values - profile, 0) / norm.residual[:, None, None]
     _, slot = weekday_and_slot(first_step + np.arange(visible.shape[0]))
     angle = 2 * np.pi * slot / STEPS_PER_DAY
@@ -202,4 +262,11 @@ def features(
         np.stack([np.sin(angle), np.cos(angle)])[:, :, None], (2,) + visible.shape
     )
     level = (profile - norm.mean[:, None, None]) / norm.spread[:, None, None]
-    return np.concatenate([residual, visible[None], level, clock]).astype(np.float32)
+    channels = [residual, visible[None], level, clock]
+    if low_quality is not None:
+        present = ~np.isnan(low_quality[0])
+        weak = (
+            np.where(present, low_quality - profile, 0) / norm.residual[:, None, None]
+        )
+        channels += [weak, present[None]]
+    return np.concatenate(channels).astype(np.float32)
