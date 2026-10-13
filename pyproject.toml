@@ -16,6 +16,7 @@ dependencies = [
     "typer>=0.20,<1",
     "polars>=1.37,<2",
     "tzdata>=2026.5",
+    "torch==2.14.1",
 ]
 
 [dependency-groups]
@@ -68,3 +69,11 @@ reportUnnecessaryCast = "error"
 reportUnnecessaryTypeIgnoreComment = "error"
 reportUnreachable = "error"
 reportAssertAlwaysTrue = "error"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
