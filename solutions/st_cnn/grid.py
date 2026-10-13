@@ -1,103 +1,205 @@
-"""Dense time x corridor grids, the historical profile and model inputs."""
+"""Dense time x corridor grids, the historical profile and model inputs.
+
+Times are integer five-minute steps since the Unix epoch, so grids, profiles
+and features index time without datetime objects.
+"""
+
+from __future__ import annotations
+
+from typing import NamedTuple
+
 import numpy as np
-import pandas as pd
+import polars as pl
+from numpy.typing import NDArray
 
-DAY = 288
-SERIES = ['station_id', 'link_id']
-STEP = pd.Timedelta(minutes=5)
+from trafficbench.contracts import MIN_OBSERVED_PERCENT
 
+STEPS_PER_DAY = 288
+STEP_SECONDS = 300
+SERIES = ["station_id", "link_id"]
+# 1970-01-01 was a Thursday; Monday is weekday 0.
+EPOCH_WEEKDAY = 3
 
-def clean(frame):
-    """Plain numpy dtypes (train arrives pyarrow-backed)."""
-    out = pd.DataFrame({
-        'timestamp': pd.to_datetime(frame['timestamp'], utc=True).astype('datetime64[ns, UTC]'),
-        'station_id': frame['station_id'].astype(str),
-        'link_id': frame['link_id'].astype(str),
-    })
-    for col in ['speed_kmh', 'flow_vph', 'pct_observed']:
-        if col in frame:
-            out[col] = frame[col].to_numpy(dtype=float, na_value=np.nan)
-    return out
+type FloatArray = NDArray[np.float64]
+type IntArray = NDArray[np.int64]
+type BoolArray = NDArray[np.bool_]
 
 
-def series_order(network, frames):
-    """(station, link) pairs in mainline order, so neighbouring columns are neighbouring links."""
-    pairs = pd.concat([f[SERIES] for f in frames]).drop_duplicates()
-    topology = network.get('lwr_mainline_topology')
-    rank = topology.set_index('link_id').order_index if topology is not None else pd.Series(dtype=float)
-    pairs = pairs.assign(rank=pairs.link_id.map(rank).astype(float).fillna(np.inf))
-    pairs = pairs.sort_values(['rank', 'link_id', 'station_id'])
-    return pd.MultiIndex.from_arrays([pairs.station_id, pairs.link_id], names=SERIES)
+def epoch_step() -> pl.Expr:
+    """Return the ``timestamp`` column as five-minute steps since the epoch."""
+    return (pl.col("timestamp").dt.epoch("s") // STEP_SECONDS).alias("step")
 
 
-def lanes_for(series, network):
-    lanes = series.get_level_values('link_id').map(network['fd_parameters'].set_index('link_id').lanes)
-    lanes = np.asarray(lanes, dtype=float)
-    if np.isnan(lanes).any() or (lanes <= 0).any():
-        raise ValueError('Missing or invalid lane counts')
-    return lanes
+def weekday_and_slot(steps: IntArray) -> tuple[IntArray, IntArray]:
+    """Return the UTC weekday (Monday 0) and time-of-day slot of each step."""
+    return (steps // STEPS_PER_DAY + EPOCH_WEEKDAY) % 7, steps % STEPS_PER_DAY
 
 
-def period(frame):
-    return pd.date_range(frame.timestamp.min().floor('D'), frame.timestamp.max(), freq=STEP)
+class Corridor(NamedTuple):
+    """Detector series in mainline order, one grid column per series.
+
+    Attributes:
+        series: ``station_id`` and ``link_id`` with their grid ``column``.
+        lanes: Lane count of each column's link.
+    """
+
+    series: pl.DataFrame
+    lanes: FloatArray
 
 
-def locate(frame, times, series):
-    """Grid (time, series) indices of each row; -1 when outside the grid."""
-    t = ((frame.timestamp - times[0]) // STEP).to_numpy()
-    s = series.get_indexer(pd.MultiIndex.from_arrays([frame.station_id, frame.link_id]))
-    t = np.where((t >= 0) & (t < len(times)) & (s >= 0), t, -1)
-    return t, np.where(t >= 0, s, -1)
+def build_corridor(
+    topology: pl.LazyFrame, fd_parameters: pl.LazyFrame, frames: list[pl.DataFrame]
+) -> Corridor:
+    """Order every (station, link) series in the frames along the mainline.
+
+    Neighbouring columns are then neighbouring links, which is what the
+    convolution relies on. Links missing from the topology go last.
+
+    Args:
+        topology: Mainline topology with each link's ``order_index``.
+        fd_parameters: Link table with each link's ``lanes``.
+        frames: Tables whose ``station_id`` and ``link_id`` pairs need columns.
+
+    Returns:
+        The ordered series and their lane counts.
+
+    Raises:
+        ValueError: If a series link has no positive lane count.
+    """
+    order = topology.select("link_id", "order_index").collect()
+    lanes = fd_parameters.select("link_id", "lanes").collect()
+    series = (
+        pl.concat([frame.select(SERIES) for frame in frames])
+        .unique()
+        .join(order, on="link_id", how="left")
+        .join(lanes, on="link_id", how="left")
+        .sort(["order_index", "link_id", "station_id"], nulls_last=True)
+    )
+    lane_counts = series["lanes"].cast(pl.Float64).fill_null(float("nan")).to_numpy()
+    if np.isnan(lane_counts).any() or (lane_counts <= 0).any():
+        raise ValueError("Missing or invalid lane counts")
+    return Corridor(series.select(SERIES).with_row_index("column"), lane_counts)
 
 
-def to_grid(frame, times, series, lanes):
-    """(2, T, S) speed and per-lane flow; NaN wherever a cell is not usable evidence."""
-    grid = np.full((2, len(times), len(series)), np.nan)
-    t, s = locate(frame, times, series)
-    ok = (t >= 0) & frame.pct_observed.ge(75).to_numpy() & frame.speed_kmh.notna().to_numpy() & frame.flow_vph.notna().to_numpy()
-    grid[0, t[ok], s[ok]] = frame.speed_kmh.to_numpy()[ok]
-    grid[1, t[ok], s[ok]] = frame.flow_vph.to_numpy()[ok] / lanes[s[ok]]
+def locate(
+    frame: pl.DataFrame, first_step: int, step_count: int, corridor: Corridor
+) -> tuple[IntArray, IntArray]:
+    """Return each row's grid (time, column) indices, or -1 outside the grid."""
+    located = frame.select(epoch_step(), *SERIES).join(
+        corridor.series, on=SERIES, how="left", maintain_order="left"
+    )
+    time_index = located["step"].to_numpy() - first_step
+    column = located["column"].cast(pl.Int64).fill_null(-1).to_numpy()
+    inside = (time_index >= 0) & (time_index < step_count) & (column >= 0)
+    return np.where(inside, time_index, -1), np.where(inside, column, -1)
+
+
+def to_grid(
+    frame: pl.DataFrame, first_step: int, step_count: int, corridor: Corridor
+) -> FloatArray:
+    """Return (2, T, S) speed and per-lane flow, NaN where a cell is not evidence.
+
+    A cell is evidence when both values are present and at least
+    ``MIN_OBSERVED_PERCENT`` of the interval was observed.
+    """
+    grid = np.full((2, step_count, len(corridor.lanes)), np.nan)
+    time_index, column = locate(frame, first_step, step_count, corridor)
+    usable = frame.select(
+        pl.col("pct_observed").ge(MIN_OBSERVED_PERCENT).fill_null(False)
+        & pl.col("speed_kmh").is_not_null()
+        & pl.col("flow_vph").is_not_null()
+        & pl.col("speed_kmh").is_not_nan()
+        & pl.col("flow_vph").is_not_nan()
+    ).to_series().to_numpy() & (time_index >= 0)
+    rows, columns = time_index[usable], column[usable]
+    grid[0, rows, columns] = frame["speed_kmh"].to_numpy()[usable]
+    grid[1, rows, columns] = (
+        frame["flow_vph"].to_numpy()[usable] / corridor.lanes[columns]
+    )
     return grid
 
 
-def slot(times):
-    return np.asarray(times.hour * 12 + times.minute // 5)
+def step_range(frames: list[pl.DataFrame]) -> tuple[int, int]:
+    """Return the first step (floored to midnight) and the step count covering the frames."""
+    steps = pl.concat([frame.select(epoch_step()) for frame in frames])[
+        "step"
+    ].to_numpy()
+    first = int(steps.min()) // STEPS_PER_DAY * STEPS_PER_DAY
+    return first, int(steps.max()) - first + 1
 
 
-def smoothed(week, k):
-    """Moving sum over +-k slots along the cyclic week, so 23:55 borders the next day."""
-    return np.sum([np.roll(week, shift, axis=0) for shift in range(-k, k + 1)], axis=0)
+def smoothed(week: FloatArray, half_width: int) -> FloatArray:
+    """Moving sum over +-half_width slots along the cyclic week, so 23:55 borders the next day."""
+    return np.sum(
+        [np.roll(week, shift, axis=0) for shift in range(-half_width, half_width + 1)],
+        axis=0,
+    )
 
 
 class Profile:
-    """Day-of-week x time-of-day mean per series, smoothed over +-smooth neighbouring slots."""
+    """Day-of-week x time-of-day mean per series, smoothed over neighbouring slots.
 
-    def __init__(self, grid, times, smooth=2):
+    Empty cells fall back to the time-of-day mean, then the series mean, then
+    the corridor mean of each channel.
+    """
+
+    def __init__(self, grid: FloatArray, first_step: int, half_width: int = 2) -> None:
         values = np.moveaxis(grid, 1, 0)
-        ok = ~np.isnan(values)
-        key = np.asarray(times.dayofweek) * DAY + slot(times)
-        sums, counts = np.zeros((7 * DAY,) + values.shape[1:]), np.zeros((7 * DAY,) + values.shape[1:])
-        np.add.at(sums, key, np.where(ok, values, 0))
-        np.add.at(counts, key, ok)
-        sums, counts = (smoothed(a, smooth).reshape((7, DAY) + values.shape[1:]) for a in (sums, counts))
-        with np.errstate(invalid='ignore', divide='ignore'):
+        observed = ~np.isnan(values)
+        weekday, slot = weekday_and_slot(first_step + np.arange(values.shape[0]))
+        week_shape = (7 * STEPS_PER_DAY,) + values.shape[1:]
+        sums, counts = np.zeros(week_shape), np.zeros(week_shape)
+        np.add.at(sums, weekday * STEPS_PER_DAY + slot, np.where(observed, values, 0))
+        np.add.at(counts, weekday * STEPS_PER_DAY + slot, observed)
+        by_day = (7, STEPS_PER_DAY) + values.shape[1:]
+        sums = smoothed(sums, half_width).reshape(by_day)
+        counts = smoothed(counts, half_width).reshape(by_day)
+        with np.errstate(invalid="ignore", divide="ignore"):
             table = sums / counts
-            fallbacks = [sums.sum(0) / counts.sum(0), sums.sum((0, 1)) / counts.sum((0, 1)),
-                         (sums.sum((0, 1, 3)) / counts.sum((0, 1, 3)))[:, None]]
+            fallbacks = [
+                sums.sum(0) / counts.sum(0),
+                sums.sum((0, 1)) / counts.sum((0, 1)),
+                (sums.sum((0, 1, 3)) / counts.sum((0, 1, 3)))[:, None],
+            ]
         for fallback in fallbacks:
             table = np.where(np.isnan(table), fallback, table)
         if np.isnan(table).any():
-            raise ValueError('No usable training observations for the profile')
+            raise ValueError("No usable history observations for the profile")
         self.table = table
 
-    def __call__(self, times):
-        return np.moveaxis(self.table[np.asarray(times.dayofweek), slot(times)], 0, 1)
+    def __call__(self, first_step: int, step_count: int) -> FloatArray:
+        """Return the (2, T, S) profile for consecutive steps from ``first_step``."""
+        weekday, slot = weekday_and_slot(first_step + np.arange(step_count))
+        return np.moveaxis(self.table[weekday, slot], 0, 1)
 
 
-def features(values, visible, profile, times, norm):
-    """(7, T, S) inputs: masked residuals, visibility, profile and time of day."""
-    resid = np.where(visible, values - profile, 0) / norm['resid'][:, None, None]
-    angle = 2 * np.pi * slot(times) / DAY
-    clock = np.broadcast_to(np.stack([np.sin(angle), np.cos(angle)])[:, :, None], (2,) + visible.shape)
-    level = (profile - norm['mean'][:, None, None]) / norm['std'][:, None, None]
-    return np.concatenate([resid, visible[None], level, clock]).astype(np.float32)
+class Normalization(NamedTuple):
+    """Per-channel scales for model inputs and outputs.
+
+    Attributes:
+        residual: Spread of observed values around the profile.
+        mean: Mean observed level, used to centre the profile input.
+        spread: Spread of observed levels, used to scale the profile input.
+    """
+
+    residual: FloatArray
+    mean: FloatArray
+    spread: FloatArray
+
+
+def features(
+    values: FloatArray,
+    visible: BoolArray,
+    profile: FloatArray,
+    first_step: int,
+    norm: Normalization,
+) -> NDArray[np.float32]:
+    """Return (7, T, S) inputs: masked residuals, visibility, profile and time of day."""
+    residual = np.where(visible, values - profile, 0) / norm.residual[:, None, None]
+    _, slot = weekday_and_slot(first_step + np.arange(visible.shape[0]))
+    angle = 2 * np.pi * slot / STEPS_PER_DAY
+    clock = np.broadcast_to(
+        np.stack([np.sin(angle), np.cos(angle)])[:, :, None], (2,) + visible.shape
+    )
+    level = (profile - norm.mean[:, None, None]) / norm.spread[:, None, None]
+    return np.concatenate([residual, visible[None], level, clock]).astype(np.float32)

@@ -7,26 +7,36 @@ reconstruction, kept small so it trains in a few minutes on a laptop.
 
 - Each panel becomes a dense grid of 5-minute steps x mainline links in corridor order
   (`lwr_mainline_topology.order_index`), with speed and per-lane flow channels.
-- A day-of-week x time-of-day profile is fitted on `ctx.train` (smoothed over +-2 slots).
-  The network predicts residuals over it.
+- History = masked rows before `history_end_date` with their known Task 1 answers restored
+  (`historical_task_labels.task1_state_answers`). A day-of-week x time-of-day profile is fitted
+  on it (smoothed over +-2 slots, cyclic across the week); the network predicts residuals over it.
+- Everything from `history_end_date` onward is one evaluation grid of visible cells. It covers
+  every requested target, including targets in more than one split. Requested answers are never
+  in the release slice.
 - Inputs: visible residuals (zero where hidden), a visibility mask, the profile level and
   time of day. 7 channels in total.
 - Network: 8 residual blocks of dilated 3x3 convolutions, 32 channels, about +-44 steps
   (3.7 h) and +-17 links of context. Fully convolutional, so it runs on the whole evaluation
   period in overlapping chunks.
-- Training is self-supervised: random crops of the training grid (and, by default, of the
+- Training is self-supervised: random crops of the history grid (and, by default, of the
   visible cells of the evaluation period) have their visible cells hidden at 20/30/50%. The
   loss is the competition score itself on those cells,
-  `0.54 RMSE_speed/25 + 0.46 RMSE_flow_per_lane/600`. No truth file is ever read.
+  `0.54 RMSE_speed/25 + 0.46 RMSE_flow_per_lane/600`.
+- Only the six columns the model needs are read from the lazy release tables.
 
 ```sh
-bench run st_cnn                                 # defaults, ~4.5 min on an M4 (MPS)
-bench run st_cnn --params '{"steps": 2000}'      # longer training
-bench run st_cnn --params '{"seed": 1}'          # another seed
+uv run --locked bench experiment st_cnn --task state --benchmark data/benchmarks/BENCHMARK
+uv run --locked bench experiment st_cnn --task state --benchmark data/benchmarks/BENCHMARK \
+  --params '{"steps": 2000, "seed": 1}'
+uv run --locked bench run st_cnn --task state --target-range validation   # all panels
 uv run --locked python -m pytest -q tests/test_st_cnn.py
 ```
 
-## Quick CV results (D12_I5_N, December week, benchmark 497cf28c170d)
+Settings (`--params`): steps, batch, window, width, lr, smooth, use_eval, device, log_every,
+seed (offset on the benchmark seed). One panel-week takes about 4-6 minutes on an M4 (MPS) at
+the default 1000 steps; training time does not grow with the history length.
+
+## Quick CV results (old harness: D12_I5_N, December week, benchmark 497cf28c170d)
 
 | Run | Speed RMSE | Flow RMSE (per lane) | State score |
 | --- | ---: | ---: | ---: |
@@ -43,6 +53,9 @@ R2 0.9426, R3 0.9392; residual_interp is 0.905 / 0.895 / 0.875. FD relative erro
 \* Single runs on the code before the review fixes (profile smoothing now wraps across days,
 which changed seed 0 from 0.9432 to 0.9431).
 
+After the port to the Polars Trafficbench, the same data (history 2030-11-03 to 2030-12-01,
+targets 2030-12-01 to 2030-12-08, D12_I5_N) gives 0.9409 (seed 0), within the old seed spread.
+
 Files: `quick_metrics.csv`, `quick_report.md` (seed 0) and `quick_oof_D12_I5_N_december.parquet`
 (its out-of-fold predictions, for blending).
 
@@ -56,9 +69,9 @@ Files: `quick_metrics.csv`, `quick_report.md` (seed 0) and `quick_oof_D12_I5_N_d
   built from train days and has no such blackouts, and st_cnn never sees one in training.
   Expect a lower leaderboard score on the eight Task 2 panels until blackouts are added to
   the training masks.
-- Not yet run on the full profile. On CPU with two threads (the GitHub benchmark runners) the
-  default 1000 steps take roughly 25 minutes or more per fold, which does not fit the 30-minute
-  panel job. Run it locally, or pass fewer steps in CI.
+- On CPU with two threads (the GitHub benchmark runners) the default 1000 steps take roughly
+  25 minutes or more per panel, which does not fit the 30-minute panel job. Run it locally, or
+  pass fewer steps in CI.
 - torch 2.14.1 has wheels for Apple Silicon macOS, Linux and Windows, but not Intel macOS.
 
 ## Deep-learning options for the next cycle
