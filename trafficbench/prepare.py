@@ -74,16 +74,18 @@ class QueueWindow(NamedTuple):
     index_rows: pl.DataFrame
 
 
-def load_config(cv_scheme_file: FilePath) -> BenchmarkConfig:
+def load_config(benchmark_scheme_file: FilePath) -> BenchmarkConfig:
     """Read the YAML benchmark scheme and validate its named settings.
 
     Args:
-        cv_scheme_file: YAML file containing panel, queue, and ODME settings.
+        benchmark_scheme_file: YAML file containing panel, queue, and ODME settings.
 
     Returns:
         Validated benchmark configuration.
     """
-    return BenchmarkConfig.model_validate(yaml.safe_load(cv_scheme_file.read_text()))
+    return BenchmarkConfig.model_validate(
+        yaml.safe_load(benchmark_scheme_file.read_text())
+    )
 
 
 def build_queue_proxy_windows(
@@ -215,11 +217,11 @@ def build_queue_proxy_windows(
         ]
         if (
             eligible_cells[origin_index - history_steps : origin_index].mean()
-            < benchmark_config.minimum_coverage
+            < benchmark_config.minimum_history_coverage
             or eligible_cells[
                 origin_index + 1 : origin_index + 1 + QUEUE_FORECAST_STEPS
             ].mean()
-            < benchmark_config.minimum_coverage
+            < benchmark_config.minimum_future_coverage
             or not future_queues.any()
         ):
             continue
@@ -342,7 +344,7 @@ def prepare(
     prediction_end_date: date,
     prediction_start_date: date | None = None,
     profile: Profile = "quick",
-    cv_scheme_file: FilePath = Path("config/cv_scheme.yaml"),
+    benchmark_scheme_file: FilePath = Path("config/benchmark_scheme.yaml"),
     panels: Sequence[Panel] | None = None,
 ) -> Path:
     """Prepare one train holdout interval for local solution experiments.
@@ -369,7 +371,7 @@ def prepare(
         prediction_end_date: Exclusive end of the generated target interval.
         prediction_start_date: First target date. Defaults to ``history_end_date``.
         profile: Named configuration selecting default panels and case settings.
-        cv_scheme_file: YAML file defining local case-generation settings.
+        benchmark_scheme_file: YAML file defining local case-generation settings.
         panels: Optional panel override. Defaults to the selected profile.
 
     Returns:
@@ -383,7 +385,7 @@ def prepare(
         raise ValueError(
             f"{benchmark_directory} is not empty. Choose a new benchmark directory."
         )
-    config = load_config(cv_scheme_file)
+    config = load_config(benchmark_scheme_file)
     if profile not in config.profiles:
         raise ValueError(f"Unknown profile: {profile}")
 

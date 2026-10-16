@@ -197,8 +197,9 @@ def report(run_metadata: RunMetadata) -> str:
         ),
         "",
         (
-            "Queue and OD synthetic scores are proxies. Physics values are "
-            "diagnostics. No local overall competition score is available."
+            "Queue and OD synthetic scores are proxies. Physics reports include "
+            "the exact FD component and diagnostics; LWR needs withheld boundary "
+            "data. No local overall competition score is available."
         ),
         "",
         "| Metric | Result | Baseline | Change |",

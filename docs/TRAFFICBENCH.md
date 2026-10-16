@@ -168,7 +168,7 @@ panels. Prepare another case if you want to compare a different date interval.
 Run this command from the repository root. `--data` points to the extracted
 release. The four date options define the history and prediction periods shown
 above. `--profile quick` selects one panel; `--profile full` selects all ten.
-`--scheme config/cv_scheme.yaml` selects the default YAML settings for choosing
+`--scheme config/benchmark_scheme.yaml` selects the default YAML settings for choosing
 queue windows and generating Task 4 cases:
 
 ```sh
@@ -177,7 +177,7 @@ uv run --locked bench prepare --data kaggle_public \
   --history-end-date 2030-11-20 \
   --prediction-start-date 2030-11-24 \
   --prediction-end-date 2030-12-01 \
-  --profile quick --scheme config/cv_scheme.yaml \
+  --profile quick --scheme config/benchmark_scheme.yaml \
   --output data/benchmarks/november
 ```
 
@@ -186,16 +186,20 @@ The default `quick` profile selects `D12_I5_N`; `full` selects all panels. Use
 case is written; without it, output goes to `data/benchmarks/<profile>`.
 
 `--scheme PATH` selects a YAML file that controls local case generation. If
-the option is omitted, Trafficbench reads `config/cv_scheme.yaml` from the
+the option is omitted, Trafficbench reads `config/benchmark_scheme.yaml` from the
 repository root. The file records the random seed, Task 2 window count, spacing
-and coverage rules, and Task 4 generated-case count and noise settings. Its
-default selects five Task 2 windows for each condition, requires at least 70%
-eligible link-time cells in both the 60-minute history and the six-step forecast
-when choosing a window, spaces windows in one condition at least 360 minutes
-apart, and creates three generated Task 4 cases. This 70% rule selects complete
-windows; it does not change the separate 75% detector-coverage rule for an
-individual queue label to be eligible for scoring. Keep the same scheme, dates,
-and panels when comparing solutions.
+and separate history/forecast coverage rules, and Task 4 generated-case count
+and noise settings. Its default selects five Task 2 windows for each condition,
+requires at least 70% eligible link-time cells in both the 60-minute history and
+six-step forecast, and spaces windows in one condition at least 360 minutes
+apart. The public validation and private windows all have 100% eligible
+forecast coverage and about 76% history coverage. To match their forecast
+coverage more closely, set `minimum_future_coverage: 1.0` in a custom scheme;
+the selected train date range may need to be wider to find five eligible
+windows for both conditions. These window-level requirements do not change the
+separate 75% detector-coverage rule for an individual queue label to be eligible
+for scoring. The default also creates three generated Task 4 cases. Keep the
+same scheme, dates, and panels when comparing solutions.
 
 Preparation saves selected release inputs, target rows, and answer tables
 separately. The [`bench experiment` runner](../trafficbench/runner.py#L614)
@@ -219,15 +223,21 @@ averages the station speeds. It keeps a label only when every station has a
 speed measurement and at least 75% observation coverage. An eligible link is
 queued when its mean speed is at or below 60% of its free-flow speed. This 75%
 rule determines which link-time cells can be scored. Separately, the scheme's
-70% coverage requirement determines whether a full history and forecast window
-can be selected.
+history and forecast coverage requirements determine whether a full history
+and forecast window can be selected.
 
 Preparation selects windows that meet the configured coverage and spacing
-requirements. Each selected window has its full 60-minute history and all six
-forecast steps. Trafficbench keeps proxy answers with the runner and hides
+history-coverage, forecast-coverage, and spacing requirements. Each selected
+window has its full 60-minute history and all six forecast steps. A custom
+scheme can require every forecast link-time cell to be eligible, as in the
+public evaluation windows. Trafficbench keeps proxy answers with the runner and hides
 their future source measurements before calling the solution. It calculates
 intersection over union (IoU) for each complete window, then aggregates the
-window scores by condition.
+window scores by condition. The windows are sampled from actual train traffic;
+Trafficbench does not synthesize queue-onset trajectories. The condition rule
+matches the published definition, but the local random sample may differ in
+onset timing, duration, severity, and congestion location from the fixed
+validation/private windows.
 
 The proxy labels apply the published threshold and coverage rules to measured
 speeds. Official labels use the underlying traffic state, so measurements near
@@ -432,10 +442,12 @@ prepare` settings to control those.
 
 Trafficbench writes metrics only when their required reference values are
 available. `state_score` and `queue_proxy_iou` compare predictions with answer
-tables. The Task 3 fields are diagnostics calculated from predictions and
-network parameters, not the official physics score. Task 4 count fit uses the
-released counts; the full local Task 4 score appears only for generated cases
-with generated path-flow answers.
+tables. For Task 3, `fd_component_score` is the exact official fundamental-
+diagram component on local Task 1 predictions; it is one third of Task 3. The
+conservation component still needs organizer boundary flows, so Trafficbench
+cannot produce the full official physics score. Other Task 3 fields are
+diagnostics. Task 4 count fit uses the released counts; the full local Task 4
+score appears only for generated cases with generated path-flow answers.
 
 The `n` column is a count, not a score. For Task 1 it counts answer rows in a
 mask regime. Task 1 scoring uses target rows with both speed and total flow
@@ -449,6 +461,7 @@ cells below the 75% detector coverage rule.
 | `speed_rmse` | When a Task 1 answer table is supplied; speed error on eligible target rows. | 0 or higher, in km/h; lower is better. |
 | `flow_per_lane_rmse` | When a Task 1 answer table is supplied; flow error after dividing by each link's lane count. | 0 or higher, in vehicles per hour per lane; lower is better. |
 | `queue_proxy_iou` | When Task 2 answers are supplied; intersection-over-union on eligible cells of one complete forecast window. Prepared train cases use speed-derived proxy labels. | 0 to 1; higher is better. It is not an official Task 2 score when the answer values are proxies. |
+| `fd_component_score` | The official Task 3 fundamental-diagram score, macro-averaged over represented Task 1 mask regimes. | 0 to 1; this is the exact FD component, not the full Task 3 score. |
 | `fd_relative_error_diagnostic` | Calculated for Task 1 predictions using the network's fundamental-diagram parameters. | 0 or higher, with no fixed upper bound; lower means a closer flow-density fit. This is a diagnostic, not the official Task 3 score. |
 | `low_flow_fraction_diagnostic` | Fraction of requested Task 1 rows with total predicted flow below 50 vehicles per hour. | 0 to 1; lower means fewer low-flow predictions. It is not the official Task 3 low-flow component. |
 | `negative_state_fraction_diagnostic` | Fraction of requested Task 1 rows with negative speed or flow. | 0 to 1; zero means no negative predictions. |
