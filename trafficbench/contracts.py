@@ -87,18 +87,20 @@ class ProfileConfig(StrictRecord):
 
 
 class QueueConfig(StrictRecord):
-    """Number, spacing, and measurement coverage required for queue cases.
+    """Window sampling requirements for local queue evaluation.
 
     Attributes:
         windows_per_condition: Number of onset and ongoing windows to select.
         minimum_spacing_minutes: Minimum time between selected forecast origins.
-        minimum_coverage: Required fraction of usable history records.
+        minimum_history_coverage: Required fraction of usable history records.
+        minimum_future_coverage: Required fraction of usable forecast records.
         excluded_panels: Panels omitted from local queue case generation.
     """
 
     windows_per_condition: int
     minimum_spacing_minutes: int
-    minimum_coverage: float
+    minimum_history_coverage: float
+    minimum_future_coverage: float
     excluded_panels: list[Panel]
 
 

@@ -8,7 +8,8 @@ profiles:
 queue:
   windows_per_condition: 5
   minimum_spacing_minutes: 360
-  minimum_coverage: 0.7
+  minimum_history_coverage: 0.7
+  minimum_future_coverage: 0.7
   excluded_panels: [D12_I405_N, D12_I405_S]
 odme:
   synthetic_cases: 3

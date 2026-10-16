@@ -16,6 +16,9 @@ from scipy.sparse import csr_matrix
 
 from .contracts import KEYS, MASK_REGIMES, VALUES, MetricRow, NetworkTables
 
+EMPTY_FLOW_FLOOR_VPH = 50
+MAXIMUM_EMPTY_TARGET_SHARE = 0.2
+
 
 def link_path_incidence_matrix(
     network: NetworkTables,
@@ -152,17 +155,19 @@ def physics_diagnostics(
 ) -> MetricRow:
     """Calculate local flow-density diagnostics for predicted Task 1 values.
 
-    Convert predicted flow and speed to density, then compare flow with the
-    free-flow or congested branch selected by the link's critical density.
-    Also report low-flow and negative-value fractions. These are local
-    diagnostics, not the competition's physics score.
+    Calculate the official Task 3 fundamental-diagram component from predicted
+    state values and released link parameters. Also report flow-density and
+    value-range diagnostics. The separate conservation component needs withheld
+    organizer boundary flows, so this function cannot produce the full Task 3
+    score.
 
     Args:
         state_prediction_table: Predicted speed and flow values.
         network: Panel link parameters for the fundamental diagram.
 
     Returns:
-        Physics consistency and value-range diagnostics for the panel.
+        The exact fundamental-diagram component, averaged over represented mask
+        regimes, and additional flow-density and value-range diagnostics.
     """
     # Reindex link parameters to prediction row order before NumPy arithmetic.
     link_parameters = (
@@ -178,8 +183,14 @@ def physics_diagnostics(
         state_prediction_table["speed_kmh"].to_numpy().astype(np.float64)
     )
     density: NDArray[np.float64] = predicted_flow / np.maximum(predicted_speed, 1)
+    lane_count: NDArray[np.float64] = (
+        link_parameters["lanes"].to_numpy().astype(np.float64)
+    )
     critical_density: NDArray[np.float64] = (
         link_parameters["critical_density"].to_numpy().astype(np.float64)
+    )
+    capacity: NDArray[np.float64] = (
+        link_parameters["capacity_vph"].to_numpy().astype(np.float64)
     )
     jam_density: NDArray[np.float64] = (
         link_parameters["k_jam"].to_numpy().astype(np.float64)
@@ -192,12 +203,53 @@ def physics_diagnostics(
         link_parameters["free_speed_kmh"].to_numpy().astype(np.float64) * density,
         congestion_wave_speed * np.maximum(jam_density - density, 0),
     )
+    mask_regimes = state_prediction_table["mask_regime"].to_numpy()
+    fd_component_scores: list[float] = []
+    for regime in MASK_REGIMES:
+        regime_mask = mask_regimes == regime
+        if not regime_mask.any():
+            continue
+        regime_lanes = lane_count[regime_mask]
+        regime_flow_per_lane = predicted_flow[regime_mask] / regime_lanes
+        regime_density_per_lane = density[regime_mask] / regime_lanes
+        critical_density_per_lane = critical_density[regime_mask] / regime_lanes
+        jam_density_per_lane = jam_density[regime_mask] / regime_lanes
+        capacity_per_lane = capacity[regime_mask] / regime_lanes
+        wave_speed_per_lane = capacity_per_lane / np.maximum(
+            jam_density_per_lane - critical_density_per_lane, 1e-9
+        )
+        regime_free_speed = (
+            link_parameters["free_speed_kmh"].to_numpy().astype(np.float64)[regime_mask]
+        )
+        expected_flow_per_lane = np.where(
+            regime_density_per_lane <= critical_density_per_lane,
+            regime_free_speed * regime_density_per_lane,
+            wave_speed_per_lane
+            * np.maximum(jam_density_per_lane - regime_density_per_lane, 0),
+        )
+        score = max(
+            0.0,
+            1.0
+            - float(
+                np.abs(regime_flow_per_lane - expected_flow_per_lane).sum()
+                / max(np.abs(regime_flow_per_lane).sum(), 1e-9)
+            ),
+        )
+        if (predicted_flow[regime_mask] < EMPTY_FLOW_FLOOR_VPH).mean() > (
+            MAXIMUM_EMPTY_TARGET_SHARE
+        ):
+            score = 0.0
+        fd_component_scores.append(score)
+
     return {
+        "fd_component_score": float(np.mean(fd_component_scores)),
         "fd_relative_error_diagnostic": float(
             np.abs(predicted_flow - expected_flow).sum()
             / max(np.abs(predicted_flow).sum(), 1e-9)
         ),
-        "low_flow_fraction_diagnostic": float((predicted_flow < 50).mean()),
+        "low_flow_fraction_diagnostic": float(
+            (predicted_flow < EMPTY_FLOW_FLOOR_VPH).mean()
+        ),
         "negative_state_fraction_diagnostic": float(
             ((predicted_flow < 0) | (predicted_speed < 0)).mean()
         ),

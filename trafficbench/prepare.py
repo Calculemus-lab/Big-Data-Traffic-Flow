@@ -217,11 +217,11 @@ def build_queue_proxy_windows(
         ]
         if (
             eligible_cells[origin_index - history_steps : origin_index].mean()
-            < benchmark_config.minimum_coverage
+            < benchmark_config.minimum_history_coverage
             or eligible_cells[
                 origin_index + 1 : origin_index + 1 + QUEUE_FORECAST_STEPS
             ].mean()
-            < benchmark_config.minimum_coverage
+            < benchmark_config.minimum_future_coverage
             or not future_queues.any()
         ):
             continue
