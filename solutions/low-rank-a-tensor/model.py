@@ -100,9 +100,9 @@ class LatcParameters(Parameters):
     )
     ar_weight: float = Field(default=0.0, ge=0)
     alpha: list[float] = Field(
-        default_factory=lambda: [4.0, 1.0, 1.0], min_length=3, max_length=3
+        default_factory=lambda: [6.0, 1.0, 1.0], min_length=3, max_length=3
     )
-    theta: float = Field(default=0.15, ge=0, lt=1)
+    theta: float = Field(default=0.2, ge=0, lt=1)
     rho0: float = Field(default=1e-3, gt=0)
     n_iter: int = Field(default=100, ge=1, le=1000)
     tol: float = Field(default=1e-4, gt=0)
