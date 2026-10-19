@@ -1,7 +1,9 @@
 # Task 3 cycle 3: a local physics score (CAL-12)
 
 Branch `cycle-3/CAL-12/task3-local-score`. A first, cheap Task 3 experiment: score the
-physical consistency of Task 1 predictions we already have, with no new training.
+physical consistency of Task 1 predictions we already have, with no new training. Follow-up
+with blending and smoothing: [`blend_and_smoothing.md`](blend_and_smoothing.md). Code is in
+`scripts/task3/`.
 
 **Why it can be scored locally.** The official evaluator checks vehicle conservation against
 organizer-held boundary flows that make the *true* state conserve vehicles exactly
@@ -36,7 +38,7 @@ or accumulation term to st_cnn's loss, scored with this script, is the obvious f
 About 20 seconds for all panels on two CPU threads:
 
 ```sh
-POLARS_MAX_THREADS=2 uv run --locked python scripts/task3_local_score.py \
+POLARS_MAX_THREADS=2 uv run --locked python scripts/task3/local_score.py \
   data/benchmarks/full_dec truth runs/RUN_ID [runs/RUN_ID ...] --output scores.csv
 ```
 

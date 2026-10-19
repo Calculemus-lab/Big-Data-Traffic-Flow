@@ -16,7 +16,7 @@ regimes, then panels within a family, then families.
 
 Usage (a run directory from ``bench experiment``, or ``truth``)::
 
-    uv run --locked python scripts/task3_local_score.py BENCHMARK_DIR RUN_DIR [RUN_DIR ...]
+    uv run --locked python scripts/task3/local_score.py BENCHMARK_DIR RUN_DIR [RUN_DIR ...]
 """
 
 from __future__ import annotations

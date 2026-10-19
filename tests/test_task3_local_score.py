@@ -1,4 +1,4 @@
-"""Tests for the local Task 3 scorer in scripts/task3_local_score.py."""
+"""Tests for the local Task 3 scorer in scripts/task3/local_score.py."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ import polars as pl
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "task3_local_score", Path(__file__).parents[1] / "scripts" / "task3_local_score.py"
+    "task3_local_score",
+    Path(__file__).parents[1] / "scripts" / "task3" / "local_score.py",
 )
 assert SPEC and SPEC.loader
 score = importlib.util.module_from_spec(SPEC)
