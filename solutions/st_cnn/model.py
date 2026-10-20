@@ -82,6 +82,8 @@ class StCnnParameters(BaseModel):
             eligibility threshold) as flagged inputs. They are never targets.
         leave_day_out: Build training residuals against a profile that leaves
             out each cell's own day, as at prediction time.
+        conservation_weight: Weight of the conservation term added to the score
+            loss (see ``conservation_loss``); 0 trains on the score alone.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
@@ -100,6 +102,7 @@ class StCnnParameters(BaseModel):
     ensemble: int = Field(default=1, gt=0)
     low_quality_inputs: bool = False
     leave_day_out: bool = False
+    conservation_weight: float = Field(default=0.0, ge=0)
 
 
 class Pool(NamedTuple):
@@ -138,16 +141,72 @@ def score_loss(
     )
 
 
+class Batch(NamedTuple):
+    """One training batch of crops.
+
+    Attributes:
+        inputs: Model inputs, (batch, channels, T, S).
+        targets: True residuals over the profile, zero where not visible.
+        hidden: Cells hidden from the inputs and scored, (batch, T, S).
+        profile: Profile speed and per-lane flow of the crops.
+        visible: Cells with usable values before hiding, (batch, T, S).
+    """
+
+    inputs: torch.Tensor
+    targets: torch.Tensor
+    hidden: torch.Tensor
+    profile: torch.Tensor
+    visible: torch.Tensor
+
+
+def conservation_loss(
+    residual_prediction: torch.Tensor, batch: Batch, vehicles_per_flow: torch.Tensor
+) -> torch.Tensor:
+    """Return 1 - S_LWR of the hidden cells, as the Task 3 conservation term scores it.
+
+    The vehicle count is ``N = flow_per_lane * lanes * length / max(speed, 1)``. The
+    evaluator's boundary flows make the true state conserve vehicles exactly, so the
+    residual of a five-minute transition is the error in the change of ``N``. Visible
+    cells keep their true values; transitions count when both cells had values and
+    at least one is hidden.
+
+    Args:
+        residual_prediction: Predicted residuals in physical units, like ``targets``.
+        batch: The batch the prediction was made for.
+        vehicles_per_flow: ``lanes * length_km`` of each grid column.
+
+    Returns:
+        Sum of absolute errors in ``N`` changes over the sum of true ``N`` changes.
+    """
+    true_speed = batch.profile[:, 0] + batch.targets[:, 0]
+    true_flow = batch.profile[:, 1] + batch.targets[:, 1]
+    predicted_speed = batch.profile[:, 0] + residual_prediction[:, 0]
+    predicted_flow = batch.profile[:, 1] + residual_prediction[:, 1]
+    true_vehicles = true_flow / true_speed.clamp(min=1) * vehicles_per_flow
+    vehicle_error = (
+        predicted_flow / predicted_speed.clamp(min=1) * vehicles_per_flow
+        - true_vehicles
+    ) * batch.hidden
+    transitions = (
+        batch.visible[:, 1:]
+        * batch.visible[:, :-1]
+        * (batch.hidden[:, 1:] + batch.hidden[:, :-1]).clamp(max=1)
+    )
+    residual = (vehicle_error[:, 1:] - vehicle_error[:, :-1]).abs() * transitions
+    signal = (true_vehicles[:, 1:] - true_vehicles[:, :-1]).abs() * transitions
+    return residual.sum() / signal.sum().clamp(min=1e-6)
+
+
 def batches(
     pools: list[Pool],
     parameters: StCnnParameters,
     norm: Normalization,
     rng: np.random.Generator,
-) -> Iterator[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
-    """Yield (inputs, residual targets, hidden mask) for random crops, forever."""
+) -> Iterator[Batch]:
+    """Yield batches of random crops with visible cells hidden, forever."""
     weights = np.array([pool.values.shape[1] for pool in pools], dtype=float)
     while True:
-        inputs, targets, masks = [], [], []
+        inputs, targets, masks, profiles, visibles = [], [], [], [], []
         for _ in range(parameters.batch):
             pool = pools[rng.choice(len(pools), p=weights / weights.sum())]
             length = min(parameters.window, pool.values.shape[1])
@@ -173,17 +232,28 @@ def batches(
             )
             targets.append(np.nan_to_num(values - profile).astype(np.float32))
             masks.append(hidden.astype(np.float32))
-        yield (
-            torch.from_numpy(np.stack(inputs)),
-            torch.from_numpy(np.stack(targets)),
-            torch.from_numpy(np.stack(masks)),
+            profiles.append(profile.astype(np.float32))
+            visibles.append(visible.astype(np.float32))
+        yield Batch(
+            *(
+                torch.from_numpy(np.stack(arrays))
+                for arrays in (inputs, targets, masks, profiles, visibles)
+            )
         )
 
 
 def fit(
-    pools: list[Pool], parameters: StCnnParameters, norm: Normalization, seed: int
+    pools: list[Pool],
+    parameters: StCnnParameters,
+    norm: Normalization,
+    seed: int,
+    vehicles_per_flow: FloatArray,
 ) -> Imputer:
-    """Train an imputer on random crops of the pools and return it in eval mode."""
+    """Train an imputer on random crops of the pools and return it in eval mode.
+
+    ``vehicles_per_flow`` (``lanes * length_km`` per grid column) is only used by
+    the conservation term.
+    """
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     device = pick_device(parameters.device)
@@ -195,11 +265,17 @@ def fit(
     )
     scale = torch.tensor(norm.residual, dtype=torch.float32, device=device)
     scale = scale[None, :, None, None]
+    column_factor = torch.tensor(vehicles_per_flow, dtype=torch.float32, device=device)
     running: float | None = None
     stream = batches(pools, parameters, norm, rng)
     for step in range(parameters.steps):
-        inputs, targets, masks = (tensor.to(device) for tensor in next(stream))
-        loss = score_loss(net(inputs) * scale, targets, masks)
+        batch = Batch(*(tensor.to(device) for tensor in next(stream)))
+        residual_prediction = net(batch.inputs) * scale
+        loss = score_loss(residual_prediction, batch.targets, batch.hidden)
+        if parameters.conservation_weight:
+            loss = loss + parameters.conservation_weight * conservation_loss(
+                residual_prediction, batch, column_factor
+            )
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -445,6 +521,15 @@ def state_for_panel(
         spread=np.maximum(np.nanstd(history_pool.values, axis=(1, 2)), 1.0),
     )
     pools = [history_pool, eval_pool] if parameters.use_eval else [history_pool]
+    lengths = corridor.series.join(
+        release_slice.panel_slices_by_panel[panel]
+        .network.fd_parameters.select("link_id", "length_km")
+        .collect(),
+        on="link_id",
+        how="left",
+        maintain_order="left",
+    )["length_km"].to_numpy()
+    vehicles_per_flow = corridor.lanes * lengths
     # Average independently seeded models; one model reproduces a single fit.
     prediction = np.mean(
         [
@@ -454,6 +539,7 @@ def state_for_panel(
                     parameters,
                     norm,
                     release_slice.seed + parameters.seed + index,
+                    vehicles_per_flow,
                 ),
                 eval_pool,
                 norm,

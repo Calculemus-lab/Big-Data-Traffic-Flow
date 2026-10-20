@@ -230,13 +230,12 @@ def score_run(benchmark: Path, run: str) -> pl.DataFrame:
     for truth_path in sorted(benchmark.glob("*/*/state/truth.parquet")):
         case = truth_path.parent.parent
         panel = case.parent.name
-        answers = (
-            pl.read_parquet(truth_path)
-            if run == "truth"
-            else pl.read_parquet(
-                Path(run) / "predictions" / panel / case.name / "state.parquet"
-            )
+        prediction_path = (
+            Path(run) / "predictions" / panel / case.name / "state.parquet"
         )
+        if run != "truth" and not prediction_path.exists():
+            continue  # the run covers only some panels
+        answers = pl.read_parquet(truth_path if run == "truth" else prediction_path)
         family = panel.rsplit("_", 1)[0]
         for row in panel_scores(case, benchmark / "network" / panel, answers):
             rows.append({"panel": panel, "family": family, **row})

@@ -281,7 +281,8 @@ def test_training_batches_only_show_unhidden_cells() -> None:
     norm = Normalization(np.array([5.0, 50.0]), np.zeros(2), np.ones(2))
     parameters = model.StCnnParameters(batch=3, window=96)
     pools = [model.Pool(values, profile, MONDAY_STEP)]
-    inputs, targets, masks = next(model.batches(pools, parameters, norm, rng))
+    batch = next(model.batches(pools, parameters, norm, rng))
+    inputs, targets, masks = batch.inputs, batch.targets, batch.hidden
     visible = ~np.isnan(values[0])
     for x, y, hidden in zip(
         inputs.numpy(), targets.numpy(), masks.numpy().astype(bool), strict=True
@@ -350,6 +351,7 @@ def test_all_cycle_two_settings_run_together(
         "ensemble": 2,
         "low_quality_inputs": True,
         "leave_day_out": True,
+        "conservation_weight": 0.3,
     }
     metrics = run_metrics(benchmark_directory, tmp_path, settings)
     assert 0 < metrics["state_score"] <= 1
@@ -372,7 +374,7 @@ def test_blackout_augmentation_hides_one_full_block() -> None:
     norm = Normalization(np.ones(2), np.zeros(2), np.ones(2))
     parameters = model.StCnnParameters(batch=4, window=96, blackout_rate=1.0)
     pools = [model.Pool(values, profile, MONDAY_STEP)]
-    _, _, masks = next(model.batches(pools, parameters, norm, rng))
+    masks = next(model.batches(pools, parameters, norm, rng)).hidden
     for hidden in masks.numpy().astype(bool):
         full_rows = hidden.all(axis=1)
         runs = np.convolve(full_rows, np.ones(model.BLACKOUT_STEPS), mode="valid")
@@ -451,3 +453,37 @@ def test_leave_day_out_matches_refitting_without_that_day() -> None:
         without[:, rows] = np.nan
         refit = Profile(without, MONDAY_STEP, half_width=2)(MONDAY_STEP, count)
         np.testing.assert_allclose(left_out[:, rows], refit[:, rows], rtol=1e-9)
+
+
+def conservation_batch(true_flow: list[float], hidden: list[float]) -> model.Batch:
+    """One link over len(true_flow) steps at 100 km/h, profile zero, so targets are values."""
+    steps = len(true_flow)
+    targets = torch.zeros(1, 2, steps, 1)
+    targets[0, 0, :, 0] = 100.0
+    targets[0, 1, :, 0] = torch.tensor(true_flow)
+    return model.Batch(
+        inputs=torch.zeros(1, 7, steps, 1),
+        targets=targets,
+        hidden=torch.tensor(hidden).reshape(1, steps, 1),
+        profile=torch.zeros(1, 2, steps, 1),
+        visible=torch.ones(1, steps, 1),
+    )
+
+
+def test_conservation_loss_is_zero_for_the_truth_and_counts_hidden_errors() -> None:
+    batch = conservation_batch([1000.0, 1200.0, 1100.0], [0.0, 1.0, 0.0])
+    factor = torch.tensor([2.0])  # lanes * length
+    assert model.conservation_loss(batch.targets.clone(), batch, factor).item() == 0
+    prediction = batch.targets.clone()
+    prediction[0, 1, 1, 0] = 1300.0  # hidden flow 100 too high
+    # N = flow / speed * factor: true 20, 24, 22; predicted middle 26.
+    # Transition errors |+2| and |-2| over true changes |4| + |2|.
+    loss = model.conservation_loss(prediction, batch, factor)
+    assert loss.item() == pytest.approx(4 / 6)
+
+
+def test_conservation_loss_ignores_transitions_without_a_hidden_cell() -> None:
+    batch = conservation_batch([1000.0, 1200.0, 1100.0], [0.0, 0.0, 0.0])
+    prediction = batch.targets.clone()
+    prediction[0, 1] = 5000.0  # visible cells are not predictions
+    assert model.conservation_loss(prediction, batch, torch.tensor([2.0])).item() == 0
