@@ -51,7 +51,7 @@ from .grid import (
     step_range,
     to_grid,
 )
-from .net import Imputer, receptive_steps
+from .net import CONTEXTS, Imputer, receptive_steps
 
 RATES = (0.2, 0.3, 0.5)
 # Validation and private blank the 30-minute Task 2 horizon plus the following hour.
@@ -84,6 +84,10 @@ class StCnnParameters(BaseModel):
             out each cell's own day, as at prediction time.
         conservation_weight: Weight of the conservation term added to the score
             loss (see ``conservation_loss``); 0 trains on the score alone.
+        output: ``flow`` predicts speed and per-lane flow residuals; ``density``
+            predicts speed and per-lane density residuals and derives flow as
+            density times speed.
+        context: Dilation set of the network (``base`` or the longer ``wide``).
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
@@ -103,6 +107,8 @@ class StCnnParameters(BaseModel):
     low_quality_inputs: bool = False
     leave_day_out: bool = False
     conservation_weight: float = Field(default=0.0, ge=0)
+    output: Literal["flow", "density"] = "flow"
+    context: Literal["base", "wide"] = "base"
 
 
 class Pool(NamedTuple):
@@ -127,6 +133,35 @@ def pick_device(name: str) -> str:
 def hide(visible: BoolArray, rng: np.random.Generator) -> BoolArray:
     """Hide visible cells independently at one of the regime rates."""
     return visible & (rng.random(visible.shape) < rng.choice(RATES))
+
+
+def physical_residuals(
+    raw: torch.Tensor,
+    profile: torch.Tensor,
+    norm: Normalization,
+    output: Literal["flow", "density"],
+) -> torch.Tensor:
+    """Convert network outputs to speed and per-lane flow residuals in physical units.
+
+    Args:
+        raw: Network outputs, (batch, 2, T, S), normalized.
+        profile: Profile speed and per-lane flow of the same cells.
+        norm: Output scales.
+        output: Whether the second channel is a flow or a density residual.
+
+    Returns:
+        Residuals over the profile for speed and per-lane flow.
+    """
+    scale = torch.tensor(norm.residual, dtype=raw.dtype, device=raw.device)
+    scale = scale[None, :, None, None]
+    if output == "flow":
+        return raw * scale
+    speed_residual = raw[:, :1] * scale[:, :1]
+    speed = profile[:, :1] + speed_residual
+    profile_density = profile[:, 1:] / profile[:, :1].clamp(min=1)
+    density = profile_density + raw[:, 1:] * norm.density_residual
+    flow_residual = density * speed.clamp(min=1) - profile[:, 1:]
+    return torch.cat([speed_residual, flow_residual], dim=1)
 
 
 def score_loss(
@@ -257,20 +292,23 @@ def fit(
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     device = pick_device(parameters.device)
-    net = Imputer(10 if parameters.low_quality_inputs else 7, parameters.width)
-    net = net.to(device)
+    net = Imputer(
+        10 if parameters.low_quality_inputs else 7,
+        parameters.width,
+        CONTEXTS[parameters.context],
+    ).to(device)
     optimizer = torch.optim.AdamW(net.parameters(), lr=parameters.lr, weight_decay=1e-4)
     schedule = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, max_lr=parameters.lr, total_steps=max(parameters.steps, 2)
     )
-    scale = torch.tensor(norm.residual, dtype=torch.float32, device=device)
-    scale = scale[None, :, None, None]
     column_factor = torch.tensor(vehicles_per_flow, dtype=torch.float32, device=device)
     running: float | None = None
     stream = batches(pools, parameters, norm, rng)
     for step in range(parameters.steps):
         batch = Batch(*(tensor.to(device) for tensor in next(stream)))
-        residual_prediction = net(batch.inputs) * scale
+        residual_prediction = physical_residuals(
+            net(batch.inputs), batch.profile, norm, parameters.output
+        )
         loss = score_loss(residual_prediction, batch.targets, batch.hidden)
         if parameters.conservation_weight:
             loss = loss + parameters.conservation_weight * conservation_loss(
@@ -292,11 +330,15 @@ def fit(
 
 @torch.no_grad()
 def predict(
-    net: Imputer, pool: Pool, norm: Normalization, chunk: int = 576
+    net: Imputer,
+    pool: Pool,
+    norm: Normalization,
+    chunk: int = 576,
+    output: Literal["flow", "density"] = "flow",
 ) -> FloatArray:
     """Predict the full (2, T, S) grid in overlapping chunks."""
     device = next(net.parameters()).device
-    pad, total = 2 * receptive_steps(), pool.values.shape[1]
+    pad, total = 2 * receptive_steps(net.dilations), pool.values.shape[1]
     out = np.full_like(pool.values, np.nan)
     visible = ~np.isnan(pool.values[0])
     for start in range(0, total, chunk):
@@ -314,10 +356,18 @@ def predict(
             norm,
             weak,
         )
-        output = net(torch.from_numpy(inputs)[None].to(device))[0].cpu().numpy()
-        out[:, start:end] = (
-            output[:, start - low : end - low] * norm.residual[:, None, None]
+        profile = torch.from_numpy(pool.profile[:, low:high].astype(np.float32))
+        residuals = (
+            physical_residuals(
+                net(torch.from_numpy(inputs)[None].to(device)),
+                profile[None].to(device),
+                norm,
+                output,
+            )[0]
+            .cpu()
+            .numpy()
         )
+        out[:, start:end] = residuals[:, start - low : end - low]
     return pool.profile + out
 
 
@@ -513,12 +563,17 @@ def state_for_panel(
         list(targets.values()),
         parameters,
     )
+    density, profile_density = (
+        grid[1] / np.maximum(grid[0], 1)
+        for grid in (history_pool.values, history_pool.profile)
+    )
     norm = Normalization(
         residual=np.maximum(
             np.nanstd(history_pool.values - history_pool.profile, axis=(1, 2)), 1.0
         ),
         mean=np.nanmean(history_pool.values, axis=(1, 2)),
         spread=np.maximum(np.nanstd(history_pool.values, axis=(1, 2)), 1.0),
+        density_residual=max(float(np.nanstd(density - profile_density)), 1e-3),
     )
     pools = [history_pool, eval_pool] if parameters.use_eval else [history_pool]
     lengths = corridor.series.join(
@@ -543,6 +598,7 @@ def state_for_panel(
                 ),
                 eval_pool,
                 norm,
+                output=parameters.output,
             )
             for index in range(parameters.ensemble)
         ],

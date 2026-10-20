@@ -5,8 +5,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-# (time, corridor) dilations: about +-44 steps (3.7 h) and +-17 links of context.
-DILATIONS = [(1, 1), (2, 1), (4, 2), (8, 2), (16, 4), (1, 1), (4, 2), (8, 4)]
+# (time, corridor) dilations per block. "base": about +-44 steps (3.7 h) and +-17 links
+# of context; "wide" adds three blocks for about +-94 steps (7.8 h) and +-35 links.
+DILATIONS = ((1, 1), (2, 1), (4, 2), (8, 2), (16, 4), (1, 1), (4, 2), (8, 4))
+CONTEXTS = {"base": DILATIONS, "wide": (*DILATIONS, (32, 8), (2, 2), (16, 8))}
 
 
 class Block(nn.Module):
@@ -27,16 +29,22 @@ class Imputer(nn.Module):
     Fully convolutional, so it runs on grids of any length.
     """
 
-    def __init__(self, inputs: int, width: int = 32) -> None:
+    def __init__(
+        self,
+        inputs: int,
+        width: int = 32,
+        dilations: tuple[tuple[int, int], ...] = DILATIONS,
+    ) -> None:
         super().__init__()
+        self.dilations = dilations
         self.inp = nn.Conv2d(inputs, width, 1)
-        self.blocks = nn.Sequential(*[Block(width, d) for d in DILATIONS])
+        self.blocks = nn.Sequential(*[Block(width, d) for d in dilations])
         self.out = nn.Conv2d(width, 2, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.out(torch.relu(self.blocks(self.inp(x))))
 
 
-def receptive_steps() -> int:
+def receptive_steps(dilations: tuple[tuple[int, int], ...] = DILATIONS) -> int:
     """Return how many time steps each output sees on either side."""
-    return sum(time for time, _ in DILATIONS)
+    return sum(time for time, _ in dilations)

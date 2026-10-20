@@ -25,7 +25,7 @@ from solutions.st_cnn.grid import (
     to_grid,
     weekday_and_slot,
 )
-from solutions.st_cnn.net import Imputer, receptive_steps
+from solutions.st_cnn.net import CONTEXTS, Imputer, receptive_steps
 from trafficbench.contracts import JsonObject
 from trafficbench.fixture import make_fixture
 from trafficbench.prepare import prepare
@@ -487,3 +487,42 @@ def test_conservation_loss_ignores_transitions_without_a_hidden_cell() -> None:
     prediction = batch.targets.clone()
     prediction[0, 1] = 5000.0  # visible cells are not predictions
     assert model.conservation_loss(prediction, batch, torch.tensor([2.0])).item() == 0
+
+
+def test_density_output_reproduces_the_profile_when_the_network_outputs_zero() -> None:
+    profile = torch.zeros(1, 2, 3, 2)
+    profile[:, 0] = 90.0  # speed
+    profile[:, 1] = 1800.0  # per-lane flow, so per-lane density 20
+    norm = Normalization(np.array([3.0, 70.0]), np.zeros(2), np.ones(2), 2.0)
+    zero = model.physical_residuals(torch.zeros(1, 2, 3, 2), profile, norm, "density")
+    assert torch.allclose(zero, torch.zeros_like(zero), atol=1e-4)
+    raw = torch.zeros(1, 2, 3, 2)
+    raw[:, 1] = 1.0  # +1 normalized density = +2 vehicles/km/lane at 90 km/h
+    residuals = model.physical_residuals(raw, profile, norm, "density")
+    assert torch.allclose(residuals[:, 1], torch.full((1, 3, 2), 180.0))
+
+
+def test_wide_context_chunks_match_a_direct_pass() -> None:
+    torch.manual_seed(0)
+    net = Imputer(7, 4, CONTEXTS["wide"]).eval()
+    rng = np.random.default_rng(0)
+    hidden = rng.random((400, 5)) < 0.5
+    values = np.where(hidden, np.nan, rng.normal(0, 10, (2, 400, 5)))
+    profile = rng.normal(0, 1, (2, 400, 5))
+    norm = Normalization(np.array([3.0, 70.0]), np.zeros(2), np.ones(2))
+    with torch.no_grad():
+        x = torch.from_numpy(features(values, ~hidden, profile, MONDAY_STEP, norm))
+        direct = net(x[None])[0].numpy() * norm.residual[:, None, None] + profile
+    chunked = model.predict(
+        net, model.Pool(values, profile, MONDAY_STEP), norm, chunk=100
+    )
+    assert receptive_steps(CONTEXTS["wide"]) == 94
+    np.testing.assert_allclose(chunked, direct, atol=1e-4)
+
+
+def test_density_output_and_wide_context_run_through_the_harness(
+    benchmark_directory: Path, tmp_path: Path
+) -> None:
+    settings: JsonObject = {**FAST, "output": "density", "context": "wide"}
+    metrics = run_metrics(benchmark_directory, tmp_path, settings)
+    assert 0 < metrics["state_score"] <= 1

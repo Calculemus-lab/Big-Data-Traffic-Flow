@@ -234,11 +234,14 @@ class Normalization(NamedTuple):
         residual: Spread of observed values around the profile.
         mean: Mean observed level, used to centre the profile input.
         spread: Spread of observed levels, used to scale the profile input.
+        density_residual: Spread of per-lane density around the profile density,
+            used to scale the density output.
     """
 
     residual: FloatArray
     mean: FloatArray
     spread: FloatArray
+    density_residual: float = 1.0
 
 
 def features(
