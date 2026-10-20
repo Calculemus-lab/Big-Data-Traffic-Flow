@@ -121,7 +121,7 @@ def run_panel(
         panel, "train", "mainline_states", FIRST_DAY, last_day + timedelta(days=2)
     )
     grids = link_grids(states, fitted.link_ids)
-    series = build_series(grids, fitted.free_speed_kmh)._replace(usual=fitted.usual)
+    series = build_series(grids, fitted.free_speed_kmh, fitted.density_scale)._replace(usual=fitted.usual)
 
     start = grids.start.replace(tzinfo=None)
     origins = np.array(

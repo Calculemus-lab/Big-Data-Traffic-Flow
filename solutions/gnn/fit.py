@@ -11,9 +11,9 @@ from numpy.typing import NDArray
 
 from trafficbench.contracts import JsonObject, Panel, ReleasePackageSlice
 
-from .example import build_series
+from .example import build_series, density_scale
 from .graph import neighbour_matrices
-from .grids import link_grids
+from .grids import link_grids, fill_masked_states
 from .network import QueueSTGNN
 from .train import train_model
 
@@ -25,6 +25,7 @@ class PanelModel(NamedTuple):
     link_ids: list[str]
     free_speed_kmh: NDArray[np.float64]
     usual: NDArray[np.float64]  # usual queue rate, (288, links)
+    density_scale: NDArray[np.float64]
 
 
 def fit_panel(
@@ -41,14 +42,19 @@ def fit_panel(
     free_speed_by_link = dict(zip(links["link_id"], links["free_speed_kmh"]))
     free_speed_kmh = np.array([free_speed_by_link[link_id] for link_id in link_ids])
 
-    train_states = panel_data.masked_mainline_states["train"]
+    train_states = fill_masked_states(
+        panel_data.masked_mainline_states["train"],
+        panel_data.historical_task_labels.task1_state_answers,
+    )
     if train_start is not None:
         train_states = train_states.filter(pl.col("timestamp") >= train_start)
     if train_end is not None:
         train_states = train_states.filter(pl.col("timestamp") < train_end)
 
     grids = link_grids(train_states, link_ids)
-    series = build_series(grids, free_speed_kmh)
+    print(f"{panel}: {grids.known.mean():.1%} of link-steps usable", flush=True)
+    scale = density_scale(grids)
+    series = build_series(grids, free_speed_kmh, scale)
     ahead, behind = neighbour_matrices(
         panel_data.network.lwr_mainline_topology, link_ids
     )
@@ -62,4 +68,4 @@ def fit_panel(
         positive_weight=float(parameters.get("positive_weight", 3.0)),
         onset_weight=float(parameters.get("onset_weight", 3.0)),
     )
-    return PanelModel(model, link_ids, free_speed_kmh, series.usual)
+    return PanelModel(model, link_ids, free_speed_kmh, series.usual, scale)

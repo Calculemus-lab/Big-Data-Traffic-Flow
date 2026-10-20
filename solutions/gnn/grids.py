@@ -11,6 +11,8 @@ from numpy.typing import NDArray
 
 STEP_MINUTES = 5
 MIN_COVERAGE_PERCENT = 75
+MIN_HISTORY_COVERAGE = 0.7
+MIN_FORECAST_COVERAGE = 0.7
 QUEUE_FRACTION = 0.60
 STEPS_PER_DAY = 288
 HISTORY_STEPS = 12
@@ -22,17 +24,23 @@ class LinkGrids(NamedTuple):
 
     start: datetime
     speed_kmh: NDArray[np.float64]  # NaN where unknown
-    occupancy: NDArray[np.float64]  # NaN where unknown
+    density_veh_per_km: NDArray[np.float64]  # flow / speed, NaN where unknown
     known: NDArray[np.bool_]  # True where a queue label can be derived
 
 
-def link_grids(masked_states: pl.LazyFrame, link_ids: list[str]) -> LinkGrids:
-    """Average station rows to one value per link and timestamp."""
+def link_grids(states: pl.LazyFrame, link_ids: list[str]) -> LinkGrids:
+    """Average station rows to one value per link and timestamp.
+
+    Density is flow / speed per station, averaged over the link's stations.
+    Speed is clipped at 1 km/h so a stopped station does not divide by zero.
+    """
     per_link = (
-        masked_states.group_by("timestamp", "link_id")
+        states.group_by("timestamp", "link_id")
         .agg(
             pl.col("speed_kmh").mean().alias("speed_kmh"),
-            pl.col("occupancy").mean().alias("occupancy"),
+            (pl.col("flow_vph") / pl.col("speed_kmh").clip(lower_bound=1.0))
+            .mean()
+            .alias("density_veh_per_km"),
             (
                 pl.col("speed_kmh").is_not_null()
                 & (pl.col("pct_observed") >= MIN_COVERAGE_PERCENT)
@@ -57,13 +65,12 @@ def link_grids(masked_states: pl.LazyFrame, link_ids: list[str]) -> LinkGrids:
     rows, columns = per_link["row"].to_numpy(), per_link["col"].to_numpy()
 
     speed = np.full((step_count, len(link_ids)), np.nan)
-    occupancy = np.full_like(speed, np.nan)
+    density = np.full_like(speed, np.nan)
     known = np.zeros(speed.shape, dtype=bool)
     speed[rows, columns] = per_link["speed_kmh"].to_numpy()
-    occupancy[rows, columns] = per_link["occupancy"].to_numpy()
+    density[rows, columns] = per_link["density_veh_per_km"].to_numpy()
     known[rows, columns] = per_link["known"].to_numpy()
-    return LinkGrids(start, speed, occupancy, known)
-
+    return LinkGrids(start, speed, density, known)
 
 def queued_cells(
     grids: LinkGrids, free_speed_kmh: NDArray[np.float64]
@@ -82,3 +89,22 @@ def usual_queue_rate(
     np.add.at(queued_count, slots, queued)
     np.add.at(known_count, slots, known)
     return queued_count / np.maximum(known_count, 1)
+
+def fill_masked_states(
+    masked_states: pl.LazyFrame, state_answers: pl.LazyFrame
+) -> pl.LazyFrame:
+    """Put the released Task 1 speed and flow back into the masked train rows."""
+    answers = state_answers.select(
+        "timestamp",
+        "station_id",
+        pl.col("speed_kmh").alias("answer_speed_kmh"),
+        pl.col("flow_vph").alias("answer_flow_vph"),
+    )
+    return (
+        masked_states.join(answers, on=["timestamp", "station_id"], how="left")
+        .with_columns(
+            pl.coalesce("speed_kmh", "answer_speed_kmh").alias("speed_kmh"),
+            pl.coalesce("flow_vph", "answer_flow_vph").alias("flow_vph"),
+        )
+        .drop("answer_speed_kmh", "answer_flow_vph")
+    )

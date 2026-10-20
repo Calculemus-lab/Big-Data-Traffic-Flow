@@ -43,7 +43,7 @@ def predict_split(
     known = pad(grids.known)
     series = Series(
         speed_ratio=pad(np.nan_to_num(grids.speed_kmh / fitted.free_speed_kmh)),
-        occupancy=pad(np.nan_to_num(grids.occupancy)),
+        density_ratio=pad(np.nan_to_num(grids.density_veh_per_km / fitted.density_scale)),
         known=known,
         queued=np.zeros_like(known),  # not needed to build inputs
         usual=fitted.usual,
