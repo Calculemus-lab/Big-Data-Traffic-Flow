@@ -52,8 +52,9 @@ The two gains mostly add up: density output adds +0.0023 on top of B3, almost al
 
 `temp/submission/st_cnn_cycle6_task1_only.csv` (local, not in git). It holds Task 1 predictions for
 March and April from the final setup, with zero rows for Tasks 2 and 4, and passes `bench validate`
-(6,980,503 rows). Cycle 4's file scored 0.42771 on the public leaderboard. If the ~60% of local
-gains that carried over from cycle 2 to cycle 4 holds again, expect about 0.432.
+(6,980,503 rows). **Public leaderboard: 0.43390**, up from cycle 4's 0.42771 (+0.0062). Locally
+we predicted +0.0070, so about 89% of the gain carried over, against about 60% from cycle 2 to
+cycle 4, when Task 1 was traded for Task 3.
 
 Per-panel scores: `full_dec_task1_metrics.csv`, `full_dec_task3_scores.csv` (cycles 4 and 6),
 `screen_task3_scores.csv`.
