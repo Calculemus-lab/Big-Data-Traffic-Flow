@@ -20,6 +20,7 @@ from optuna.trial import TrialState
 from scripts.tune_queue import evaluate
 from solutions.queue_boosting_event_aware.model import QueueParameters
 from trafficbench.contracts import Panel
+from trafficbench.data import file_hash
 from trafficbench.metrics import aggregate
 from trafficbench.runner import code_hash, verify_benchmark
 
@@ -105,6 +106,7 @@ def main() -> None:
     identity = {
         "benchmark_id": manifest.benchmark_id,
         "code_hash": code_hash(),
+        "optimizer_hash": file_hash(Path(__file__)),
         "seed": args.seed,
         "threads": args.threads,
         "jobs": args.jobs,
@@ -115,11 +117,14 @@ def main() -> None:
     identity_path.write_text(json.dumps(identity, indent=2) + "\n")
     study = optuna.create_study(
         study_name="cal31-queue-specialists",
-        storage=f"sqlite:///{(args.output / 'study.sqlite3').resolve()}",
+        storage=optuna.storages.RDBStorage(
+            url=f"sqlite:///{(args.output / 'study.sqlite3').resolve()}",
+            engine_kwargs={"connect_args": {"timeout": 120}},
+        ),
         load_if_exists=True,
         direction="maximize",
         sampler=optuna.samplers.TPESampler(seed=args.seed, n_startup_trials=4),
-        pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=0),
+        pruner=optuna.pruners.MedianPruner(n_startup_trials=4, n_warmup_steps=3),
     )
     if not study.trials:
         # Include the reference and controlled published-method ablations.
