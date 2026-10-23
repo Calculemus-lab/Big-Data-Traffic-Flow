@@ -19,10 +19,9 @@ export NUMEXPR_NUM_THREADS=1
 export CAL31_RELEASE_DIRECTORY="$release_directory"
 export CAL31_WORK_DIRECTORY="$work_directory"
 
-# One controller owns the study; children inherit a 128 GiB address-space ceiling.
+# One controller owns the study; keep child processes within physical server memory.
 exec 9>"$work_directory/pipeline.lock"
 flock --nonblock 9
-ulimit -v 134217728
 
 # Prepare separate tuning and later-month cases. Existing complete cases are verified.
 .venv/bin/python -u - <<'PY'

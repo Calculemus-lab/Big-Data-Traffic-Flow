@@ -1,6 +1,7 @@
 """Forecast Task 2 queues with LightGBM and condition-aware decoding.
 
-Each panel has one general LightGBM model per forecast horizon and an onset
+Each panel has either one general LightGBM model per forecast horizon or a
+shared classifier conditioned on forecast time and queue condition, plus an onset
 specialist trained on selector-matched events. The specialist optionally blends
 CatBoost and uses missing-history augmentation. Onset windows predict only at
 T+30, where the released selector places the first queue. Models learn only from
@@ -66,7 +67,8 @@ class QueueParameters(BaseModel):
     ``training_stride`` is measured in five-minute origins. Training rows are
     uniformly sampled per horizon up to ``max_training_rows``; forecast targets
     are never sampled. ``calibration_days`` is reserved within historical data
-    before the final refit. Explicit thresholds override historical calibration.
+    before the final refit. ``shared_horizons`` pools all six forecast steps into
+    one classifier. Explicit thresholds override historical calibration.
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
@@ -85,6 +87,7 @@ class QueueParameters(BaseModel):
     onset_catboost_weight: float = Field(default=0.0, ge=0, le=1)
     onset_catboost_depth: int = Field(default=6, ge=2, le=10)
     ongoing_event_only: bool = False
+    shared_horizons: bool = False
     training_stride: int = Field(default=3, ge=1)
     max_training_rows: int = Field(default=250_000, ge=1)
     max_training_origins: int = Field(default=3000, ge=1)
@@ -134,11 +137,13 @@ class QueueModels(NamedTuple):
 
     Attributes:
         horizons: General classifier for each of the six forecast steps.
+        shared_horizons: Whether ``horizons`` contains one shared classifier.
         onset: Classifier fitted on selector-matched onset events, if available.
         thresholds: Calibrated probability cutoffs by published condition.
     """
 
     horizons: tuple[lgb.Booster, ...]
+    shared_horizons: bool
     onset: OnsetModels | None
     thresholds: QueueThresholds
 
@@ -345,6 +350,96 @@ def _fit_horizon(
         num_boost_round=iterations,
         valid_sets=validations,
         callbacks=callbacks,
+    )
+
+
+def _add_horizon_context(
+    features: FeatureMatrix,
+    horizon_minutes: int,
+    ongoing_origins: BoolArray,
+) -> FeatureMatrix:
+    """Add forecast time and published queue condition to every link row.
+
+    Args:
+        features: Causal rows ordered by origin and then link.
+        horizon_minutes: Forecast time represented by this feature matrix.
+        ongoing_origins: Condition flag for each origin in ``features``.
+
+    Returns:
+        A feature matrix with horizon and condition columns appended.
+    """
+    if len(ongoing_origins) == 0 or len(features.values) % len(ongoing_origins):
+        raise ValueError(
+            "Feature rows must contain an equal number of links per origin."
+        )
+    links_per_origin = len(features.values) // len(ongoing_origins)
+    horizon = np.full(len(features.values), horizon_minutes, dtype=np.float32)
+    condition = np.repeat(ongoing_origins, links_per_origin).astype(np.float32)
+    values = np.column_stack((features.values, horizon, condition)).astype(
+        np.float32, copy=False
+    )
+    return FeatureMatrix(
+        values, (*features.names, "forecast_minutes", "ongoing_condition")
+    )
+
+
+def _fit_shared_horizons(
+    features: FeatureMatrix,
+    labels: BoolArray,
+    eligible: BoolArray,
+    training_rows: BoolArray,
+    validation_rows: BoolArray,
+    ongoing_origins: BoolArray,
+    parameters: QueueParameters,
+    seed: int,
+    iterations: int,
+) -> lgb.Booster:
+    """Fit one classifier across all forecast steps and both queue conditions.
+
+    Args:
+        features: Causal history features for all training origins and links.
+        labels: Queue outcomes indexed by origin, link, and forecast step.
+        eligible: Validity mask with the same shape as ``labels``.
+        training_rows: Fit interval membership indexed by origin and link.
+        validation_rows: Calibration interval membership indexed by origin and link.
+        ongoing_origins: Published ongoing-condition flag for each origin.
+        parameters: Tree settings and row limits.
+        seed: Deterministic row-sampling and LightGBM seed.
+        iterations: Maximum boosting rounds before historical early stopping.
+
+    Returns:
+        A shared classifier trained with forecast-minute and condition features.
+    """
+    horizon_features = [
+        _add_horizon_context(
+            features,
+            (horizon + 1) * QUEUE_INTERVAL_MINUTES,
+            ongoing_origins,
+        )
+        for horizon in range(QUEUE_FORECAST_STEPS)
+    ]
+    shared_features = FeatureMatrix(
+        np.concatenate([matrix.values for matrix in horizon_features]),
+        horizon_features[0].names,
+    )
+    shared_parameters = parameters.model_copy(
+        update={
+            "max_training_rows": parameters.max_training_rows * QUEUE_FORECAST_STEPS
+        }
+    )
+    return _fit_horizon(
+        shared_features,
+        np.concatenate(
+            [labels[:, :, horizon].ravel() for horizon in range(QUEUE_FORECAST_STEPS)]
+        ),
+        np.concatenate(
+            [eligible[:, :, horizon].ravel() for horizon in range(QUEUE_FORECAST_STEPS)]
+        ),
+        np.tile(training_rows, QUEUE_FORECAST_STEPS),
+        np.tile(validation_rows, QUEUE_FORECAST_STEPS),
+        shared_parameters,
+        seed,
+        iterations,
     )
 
 
@@ -637,19 +732,33 @@ def _fit_models(
         horizon_validation = np.repeat(validation_origins & ongoing_windows, link_count)
         if not horizon_training.any():
             horizon_training = training_rows
-    models: list[lgb.Booster] = []
-    for horizon in range(QUEUE_FORECAST_STEPS):
-        model = _fit_horizon(
+    if parameters.shared_horizons:
+        shared_model = _fit_shared_horizons(
             features,
-            labels[:, :, horizon].ravel(),
-            eligible[:, :, horizon].ravel(),
+            labels,
+            eligible,
             horizon_training,
             horizon_validation,
+            ongoing,
             parameters,
-            seed + horizon,
+            seed,
             parameters.iterations,
         )
-        models.append(model)
+        models = [shared_model] * QUEUE_FORECAST_STEPS
+    else:
+        models = [
+            _fit_horizon(
+                features,
+                labels[:, :, horizon].ravel(),
+                eligible[:, :, horizon].ravel(),
+                horizon_training,
+                horizon_validation,
+                parameters,
+                seed + horizon,
+                parameters.iterations,
+            )
+            for horizon in range(QUEUE_FORECAST_STEPS)
+        ]
     training_onset = training_origins & onset_windows
     validation_onset = validation_origins & onset_windows
     onset_model = None
@@ -681,15 +790,38 @@ def _fit_models(
         )
     thresholds = QueueThresholds(FALLBACK_QUEUE_THRESHOLD, FALLBACK_QUEUE_THRESHOLD)
     if validation_origins.any() and calibration_windows[validation_origins].any():
-        probabilities = np.stack(
-            [
-                np.asarray(
-                    model.predict(features.values[validation_rows]), dtype=np.float32
-                ).reshape(-1, link_count)
-                for model in models
-            ],
-            axis=2,
-        )
+        if parameters.shared_horizons:
+            validation_features = FeatureMatrix(
+                features.values[validation_rows], features.names
+            )
+            probabilities = np.stack(
+                [
+                    np.asarray(
+                        models[0].predict(
+                            _add_horizon_context(
+                                validation_features,
+                                (horizon + 1) * QUEUE_INTERVAL_MINUTES,
+                                ongoing[validation_origins],
+                            ).values,
+                            num_threads=parameters.threads,
+                        ),
+                        dtype=np.float32,
+                    ).reshape(-1, link_count)
+                    for horizon in range(QUEUE_FORECAST_STEPS)
+                ],
+                axis=2,
+            )
+        else:
+            probabilities = np.stack(
+                [
+                    np.asarray(
+                        model.predict(features.values[validation_rows]),
+                        dtype=np.float32,
+                    ).reshape(-1, link_count)
+                    for model in models
+                ],
+                axis=2,
+            )
         if onset_model is not None:
             validation_onset_probabilities = np.asarray(
                 onset_model.predict(features.values[validation_rows]),
@@ -712,19 +844,33 @@ def _fit_models(
             else np.ones(len(features.values), dtype=bool)
         )
         no_validation = np.zeros(len(features.values), dtype=bool)
-        models = [
-            _fit_horizon(
+        if parameters.shared_horizons:
+            shared_model = _fit_shared_horizons(
                 features,
-                labels[:, :, horizon].ravel(),
-                eligible[:, :, horizon].ravel(),
+                labels,
+                eligible,
                 all_rows,
                 no_validation,
+                ongoing,
                 parameters,
-                seed + horizon,
-                model.best_iteration or parameters.iterations,
+                seed,
+                models[0].best_iteration or parameters.iterations,
             )
-            for horizon, model in enumerate(models)
-        ]
+            models = [shared_model] * QUEUE_FORECAST_STEPS
+        else:
+            models = [
+                _fit_horizon(
+                    features,
+                    labels[:, :, horizon].ravel(),
+                    eligible[:, :, horizon].ravel(),
+                    all_rows,
+                    no_validation,
+                    parameters,
+                    seed + horizon,
+                    model.best_iteration or parameters.iterations,
+                )
+                for horizon, model in enumerate(models)
+            ]
         if onset_model is not None:
             onset_model = _fit_onset(
                 onset_features,
@@ -761,7 +907,10 @@ def _fit_models(
         [model.current_iteration() for model in models],
     )
     return QueueModels(
-        tuple(models), onset_model, QueueThresholds(onset, ongoing_threshold)
+        tuple(models),
+        parameters.shared_horizons,
+        onset_model,
+        QueueThresholds(onset, ongoing_threshold),
     )
 
 
@@ -838,13 +987,33 @@ def _predict_panel(
             features = history_features(
                 grid, np.asarray([HISTORY_STEPS], dtype=np.int64), [origin], network
             )
-            probability = np.stack(
-                [
-                    np.asarray(model.predict(features.values), dtype=np.float32)
-                    for model in fitted.horizons
-                ],
-                axis=1,
-            )
+            if fitted.shared_horizons:
+                ongoing_condition = condition == "queue_ongoing"
+                probability = np.stack(
+                    [
+                        np.asarray(
+                            model.predict(
+                                _add_horizon_context(
+                                    features,
+                                    (horizon + 1) * QUEUE_INTERVAL_MINUTES,
+                                    np.asarray([ongoing_condition], dtype=np.bool_),
+                                ).values,
+                                num_threads=parameters.threads,
+                            ),
+                            dtype=np.float32,
+                        )
+                        for horizon, model in enumerate(fitted.horizons)
+                    ],
+                    axis=1,
+                )
+            else:
+                probability = np.stack(
+                    [
+                        np.asarray(model.predict(features.values), dtype=np.float32)
+                        for model in fitted.horizons
+                    ],
+                    axis=1,
+                )
             if condition == "queue_onset" and fitted.onset is not None:
                 probability[:, ONSET_HORIZON_INDEX] = np.asarray(
                     fitted.onset.predict(features.values), dtype=np.float32

@@ -23,6 +23,7 @@ from solutions.queue_boosting_event_aware.features import (
 )
 from solutions.queue_boosting_event_aware.model import (
     QueueParameters,
+    _add_horizon_context,
     _fit_onset,
     _onset_candidate_origins,
     calibration_thresholds,
@@ -34,6 +35,27 @@ from solutions.queue_boosting_event_aware.model import (
 from trafficbench.contracts import JsonObject
 from trafficbench.data import Release, load_release_slice
 from trafficbench.runner import run_experiment
+
+
+def test_shared_horizon_context_repeats_condition_per_link() -> None:
+    """Shared forecast models receive horizon and condition for every link row."""
+    features = FeatureMatrix(
+        np.asarray([[0.2, 0.4], [0.8, 1.0], [0.3, 0.5], [0.7, 0.9]], dtype=np.float32),
+        ("speed", "occupancy"),
+    )
+
+    contextual = _add_horizon_context(
+        features, 30, np.asarray([False, True], dtype=np.bool_)
+    )
+
+    assert contextual.names == (
+        "speed",
+        "occupancy",
+        "forecast_minutes",
+        "ongoing_condition",
+    )
+    np.testing.assert_array_equal(contextual.values[:, 2], [30, 30, 30, 30])
+    np.testing.assert_array_equal(contextual.values[:, 3], [0, 0, 1, 1])
 
 
 @pytest.fixture
