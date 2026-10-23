@@ -4,6 +4,8 @@
 classifiers and a separate LightGBM onset classifier. Each directional panel is
 fitted separately. `queue_true` predictions for onset windows are restricted to T+30; ongoing windows
 use the six horizon forecasts.
+The onset specialist can optionally blend CatBoost probabilities and train with
+missing-history augmentation. These options are disabled in the reference defaults.
 
 The features describe the preceding 60 minutes: speed relative to free-flow
 speed, flow relative to capacity, occupancy, speed changes, queue duration,
@@ -83,7 +85,8 @@ and invalid ranges are rejected.
 | `max_training_origins` | 3000 | Earlier fit-origin cap before feature construction; selector-matched onset events are reserved before regular origins are sampled. |
 | `calibration_days` | 7 | Later historical days reserved before the final refit. |
 | `early_stopping_rounds` | 30 | Historical validation patience. |
-| `threads` | 4 | LightGBM CPU threads per panel. |
+| `threads` | 4 | LightGBM and CatBoost CPU threads per panel, including prediction. |
+| `panel_workers` | 1 | Independent panels fitted concurrently for direct prediction runs; each panel retains the runner's seed. |
 | `threshold` | `null` | Optional common threshold overriding calibration. |
 | `onset_threshold` | `null` | Optional onset override, taking priority over `threshold`. |
 | `ongoing_threshold` | `null` | Optional ongoing override, taking priority over `threshold`. |
@@ -158,8 +161,8 @@ Run the study on prepared selector-matched cases:
 ```sh
 # Keep artifacts outside the source checkout on the university server.
 uv run --locked python -m scripts.optimize_queue \
-  --benchmark /data/s4501020/trafficflow/cal31/benchmarks/december \
-  --output /data/s4501020/trafficflow/cal31/optuna \
+  --benchmark /data/s4501020/trafficflow/experiments/cal31/benchmarks/december \
+  --output /data/s4501020/trafficflow/experiments/cal31/optuna \
   --trials 32 --jobs 16 --threads 8
 ```
 

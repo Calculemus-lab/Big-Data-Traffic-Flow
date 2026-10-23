@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from . import table_types
 from .contracts import JsonObject, Panel, ReleasePackageSlice, Split
@@ -22,6 +23,8 @@ def map_panels[PredictionFrameT: PredictionFrame](
         [ReleasePackageSlice, Panel, Mapping[Split, PredictionFrameT], JsonObject],
         Mapping[Split, PredictionFrameT],
     ],
+    *,
+    workers: int = 1,
 ) -> dict[Panel, dict[Split, PredictionFrameT]]:
     """Apply one panel predictor and collect its split results for every panel.
 
@@ -33,14 +36,32 @@ def map_panels[PredictionFrameT: PredictionFrame](
         predict_panel: Function that predicts all requested splits for one
             panel. The function receives the release slice, panel name, that
             panel's target templates by split, and the solution settings.
+        workers: Maximum independent panels fitted concurrently. Every worker
+            receives the original release slice with its unchanged seed.
 
     Returns:
         Predictions grouped by panel and split, matching the runner's solution
         interface.
     """
-    return {
-        panel: dict(
-            predict_panel(release_slice, panel, split_templates, solution_parameters)
-        )
-        for panel, split_templates in target_templates_by_panel_and_split.items()
-    }
+    if workers == 1:
+        return {
+            panel: dict(
+                predict_panel(
+                    release_slice, panel, split_templates, solution_parameters
+                )
+            )
+            for panel, split_templates in target_templates_by_panel_and_split.items()
+        }
+    # Preserve input order while allowing independent model fits to overlap.
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures: dict[Panel, Future[Mapping[Split, PredictionFrameT]]] = {
+            panel: executor.submit(
+                predict_panel,
+                release_slice,
+                panel,
+                split_templates,
+                solution_parameters,
+            )
+            for panel, split_templates in target_templates_by_panel_and_split.items()
+        }
+        return {panel: dict(future.result()) for panel, future in futures.items()}

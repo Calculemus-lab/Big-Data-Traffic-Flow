@@ -1,7 +1,8 @@
 """Forecast Task 2 queues with LightGBM and condition-aware decoding.
 
 Each panel has one general LightGBM model per forecast horizon and an onset
-classifier trained on selector-matched events. Onset windows predict only at
+specialist trained on selector-matched events. The specialist optionally blends
+CatBoost and uses missing-history augmentation. Onset windows predict only at
 T+30, where the released selector places the first queue. Models learn only from
 the historical interval, restoring released Task 1 answers before deriving
 speed-threshold labels. A final historical interval selects tree counts and
@@ -90,6 +91,7 @@ class QueueParameters(BaseModel):
     calibration_days: int = Field(default=7, ge=1)
     early_stopping_rounds: int = Field(default=30, ge=1)
     threads: int = Field(default=4, ge=1)
+    panel_workers: int = Field(default=1, ge=1)
     threshold: float | None = Field(default=None, gt=0, lt=1)
     onset_threshold: float | None = Field(default=None, gt=0, lt=1)
     ongoing_threshold: float | None = Field(default=None, gt=0, lt=1)
@@ -906,4 +908,5 @@ def queue(
         target_templates_by_panel_and_split,
         solution_parameters,
         _predict_panel,
+        workers=QueueParameters.model_validate(solution_parameters).panel_workers,
     )
