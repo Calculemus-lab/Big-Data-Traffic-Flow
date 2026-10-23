@@ -1,5 +1,14 @@
 [
   {
+    "ref": 57561677,
+    "fileName": "cal31-task2-shared-tuned.csv",
+    "date": "2026-10-23T13:04:05.773000",
+    "description": "CAL-31 probe: shared-horizon tuned Task 2; other tasks zero",
+    "status": "SubmissionStatus.COMPLETE",
+    "publicScore": "0.21169",
+    "privateScore": ""
+  },
+  {
     "ref": 57007717,
     "fileName": "task2_all_steps_candidate.csv",
     "date": "2026-10-09T11:41:25.363000",

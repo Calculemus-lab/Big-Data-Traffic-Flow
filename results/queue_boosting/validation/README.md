@@ -15,6 +15,7 @@ ablation both have official public scores.
 | --- | ---: | ---: |
 | Queue boosting, other task outputs zero | 56917601 | 0.13514 |
 | Selector-aware, onset at T+30 | 57007109 | 0.21532 |
+| CAL-31 shared-horizon tuned probe | 57561677 | 0.21169 |
 | Selector-aware, onset at all horizons | 57007717 | 0.21119 |
 | All-zero control | 56917634 | 0.00000 |
 
@@ -23,6 +24,11 @@ approximately `0.71773` and `0.70397` Task 2 IoU, respectively. The T+30
 candidate leads the controlled all-horizons ablation by `0.00413` composite,
 about `0.01377` Task 2 IoU. See the [follow-up experiment report](experiments_2026-10-09.md)
 for the comparison details.
+
+The CAL-31 shared-horizon probe scored below the T+30 candidate by `0.00363`
+composite, or approximately `0.01210` Task 2 IoU. It narrowly exceeds the
+all-horizons ablation by `0.00050` composite. Its score and training settings are
+recorded in the [CAL-31 probe report](../../cal31/university-followup.md#official-kaggle-probe).
 
 Only the queue predictions differ between the two uploads. Every official queue
 window contains a positive future queue cell, so an all-clear queue control has

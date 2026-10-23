@@ -48,9 +48,34 @@ that the January gain was not reliable across months.
 These February checks cover only D12_I5_N and D7_I10_E, not the full eight-panel
 benchmark. They are sufficient to reject the tested candidates for immediate
 submission, but they do not establish which model is best across all panels or
-the competition's hidden labels. No new Kaggle submission was made because the
-tested candidates failed to improve the later-month reference check. The
-previous Task 2-only Kaggle record remains the reference.
+the competition's hidden labels. At that stage, no new Kaggle submission had
+been made because the tested candidates failed to improve the later-month
+reference check.
+
+## Official Kaggle probe
+
+The full-panel December comparison later selected a shared-horizon model with
+63 leaves, 30 minimum rows per leaf, positive weight 4, and feature fraction
+0.75. It scored 0.901516 on December, compared with 0.888597 for the reference,
+but scored 0.843952 on February, compared with 0.854354 for the reference. This
+mixed local evidence motivated one official public-validation probe; it was not
+treated as proof of improvement.
+
+Kaggle submission 57561677 was generated from the full released training period
+and covers every validation and private Task 2 window. Task 1 and Task 4 values
+are zero, matching the earlier Task 2-only uploads. The assembled file passed
+TrafficBench validation with 6,980,503 rows. Its SHA-256 is
+`91c8a991f64a97815bf3afd5b4942926a21db831fb2d4885988c906cbed2efe1`; the file
+and prediction run remain under
+`/data/s4501020/trafficflow/experiments/cal31/kaggle-probe/` on Drogium.
+
+The public composite score is 0.21169, below the previous best Task 2-only
+submission 57007109 at 0.21532, and slightly above the all-horizons ablation
+57007717 at 0.21119. Because the other tasks are zero, these correspond to
+approximate Task 2 scores of 0.70563, 0.71773, and 0.70397. Kaggle reports no
+private score before final evaluation. The probe therefore confirms that this
+candidate is not the best public Task 2 submission, while its private ranking
+remains unknown.
 
 ## Reproduction artifacts
 
