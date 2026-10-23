@@ -109,7 +109,8 @@ def build_queue_proxy_windows(
     measured speed is at most 60% of its free-flow speed. Classify a window as
     ongoing when any link is queued at two or more history timestamps. Classify
     the other eligible windows as onset. Keep windows meeting the configured
-    measurement coverage and spacing requirements.
+    measurement coverage and spacing requirements. When ``onset_at_final_horizon``
+    is enabled, onset windows must have no queued cell at T+5 through T+25.
 
     Args:
         state_answer_table: Unmasked train measurements covering history and targets.
@@ -231,6 +232,14 @@ def build_queue_proxy_windows(
             if (history_queues.sum(axis=0) >= 2).any()
             else "queue_onset"
         )
+        # The released onset selector chooses the first origin that sees an event
+        # at T+30. Arbitrary onset origins have a different target distribution.
+        if (
+            benchmark_config.onset_at_final_horizon
+            and condition == "queue_onset"
+            and future_queues[:-1].any()
+        ):
+            continue
         previous_origins = selected_origins[condition]
         if len(previous_origins) >= benchmark_config.windows_per_condition or any(
             abs(origin_index - previous_index) * QUEUE_INTERVAL_MINUTES

@@ -1,0 +1,18 @@
+name: selector_matched_queue_v1
+seed: 69420
+profiles:
+  quick:
+    panels: [D12_I5_N, D7_I10_E]
+  full:
+    panels: all
+queue:
+  windows_per_condition: 10
+  minimum_spacing_minutes: 360
+  minimum_history_coverage: 0.7
+  minimum_future_coverage: 0.7
+  excluded_panels: [D12_I405_N, D12_I405_S]
+  onset_at_final_horizon: true
+odme:
+  synthetic_cases: 3
+  demand_log_sigma: 0.35
+  count_noise_fraction: 0.03

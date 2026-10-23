@@ -19,6 +19,7 @@ from typing import NamedTuple
 import lightgbm as lgb
 import numpy as np
 import polars as pl
+from catboost import CatBoostClassifier
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -73,6 +74,16 @@ class QueueParameters(BaseModel):
     num_leaves: int = Field(default=31, ge=2)
     min_data_in_leaf: int = Field(default=100, ge=1)
     positive_weight: float = Field(default=2.0, gt=0)
+    feature_fraction: float = Field(default=0.9, gt=0, le=1)
+    lambda_l2: float = Field(default=1.0, ge=0)
+    onset_num_leaves: int | None = Field(default=None, ge=2)
+    onset_min_data_in_leaf: int | None = Field(default=None, ge=1)
+    onset_positive_weight: float | None = Field(default=None, gt=0)
+    onset_iterations: int | None = Field(default=None, ge=1)
+    onset_history_dropout: float = Field(default=0.0, ge=0, lt=1)
+    onset_catboost_weight: float = Field(default=0.0, ge=0, le=1)
+    onset_catboost_depth: int = Field(default=6, ge=2, le=10)
+    ongoing_event_only: bool = False
     training_stride: int = Field(default=3, ge=1)
     max_training_rows: int = Field(default=250_000, ge=1)
     max_training_origins: int = Field(default=3000, ge=1)
@@ -91,6 +102,31 @@ class QueueThresholds(NamedTuple):
     queue_ongoing: float
 
 
+class OnsetModels(NamedTuple):
+    """Specialist classifiers whose probability blend is calibrated as one head."""
+
+    lightgbm: lgb.Booster
+    catboost: CatBoostClassifier | None
+    catboost_weight: float
+    threads: int
+
+    def predict(self, values: FloatArray) -> FloatArray:
+        """Return blended queue probabilities for the supplied causal feature rows."""
+        probability = np.asarray(
+            self.lightgbm.predict(values, num_threads=self.threads), dtype=np.float32
+        )
+        if self.catboost is not None:
+            catboost_probability = np.asarray(
+                self.catboost.predict_proba(values, thread_count=self.threads),
+                dtype=np.float32,
+            )[:, 1]
+            weight = np.float32(self.catboost_weight)
+            probability = (
+                np.float32(1) - weight
+            ) * probability + weight * catboost_probability
+        return np.asarray(probability, dtype=np.float32)
+
+
 class QueueModels(NamedTuple):
     """Horizon models, optional onset head, and historical IoU thresholds.
 
@@ -101,7 +137,7 @@ class QueueModels(NamedTuple):
     """
 
     horizons: tuple[lgb.Booster, ...]
-    onset: lgb.Booster | None
+    onset: OnsetModels | None
     thresholds: QueueThresholds
 
 
@@ -295,8 +331,8 @@ def _fit_horizon(
             "num_leaves": parameters.num_leaves,
             "min_data_in_leaf": parameters.min_data_in_leaf,
             "scale_pos_weight": parameters.positive_weight,
-            "feature_fraction": 0.9,
-            "lambda_l2": 1.0,
+            "feature_fraction": parameters.feature_fraction,
+            "lambda_l2": parameters.lambda_l2,
             "num_threads": parameters.threads,
             "seed": seed,
             "deterministic": True,
@@ -307,6 +343,117 @@ def _fit_horizon(
         num_boost_round=iterations,
         valid_sets=validations,
         callbacks=callbacks,
+    )
+
+
+def dropout_history(grid: TrafficGrid, fraction: float, seed: int) -> TrafficGrid:
+    """Drop measured link-time inputs together without changing target labels.
+
+    Args:
+        grid: Historical input measurements, independent of the target arrays.
+        fraction: Probability of removing a link's measurements at a timestamp.
+        seed: Reproducible missingness seed.
+
+    Returns:
+        A separate input grid with speed, flow, occupancy, and ramp measurements
+        missing at the same sampled cells. The original grid is never modified.
+    """
+    missing = np.random.default_rng(seed).random(grid.speed_ratio.shape) < fraction
+    return TrafficGrid(
+        grid.timestamps,
+        *(np.where(missing, np.nan, values) for values in grid[1:]),
+    )
+
+
+def _fit_onset(
+    features: FeatureMatrix,
+    augmented: FeatureMatrix | None,
+    labels: BoolArray,
+    eligible: BoolArray,
+    training_rows: BoolArray,
+    validation_rows: BoolArray,
+    parameters: QueueParameters,
+    seed: int,
+    iterations: int,
+    catboost_iterations: int,
+) -> OnsetModels:
+    """Fit the onset specialist with optional missing-history augmentation and blend.
+
+    Original rows alone enter chronological validation. Augmented copies enter
+    training only when their original origin belongs to the fit interval. Tree
+    budgets passed by the final refit have already been selected on history.
+    """
+    if augmented is not None:
+        # Augmentation changes inputs only; it cannot turn validation labels into
+        # training examples across the chronological split.
+        features = FeatureMatrix(
+            np.concatenate([features.values, augmented.values]), features.names
+        )
+        labels = np.tile(labels, 2)
+        eligible = np.tile(eligible, 2)
+        training_rows = np.tile(training_rows, 2)
+        validation_rows = np.concatenate(
+            [validation_rows, np.zeros_like(validation_rows)]
+        )
+    specialist = parameters.model_copy(
+        update={
+            "num_leaves": parameters.onset_num_leaves or parameters.num_leaves,
+            "min_data_in_leaf": parameters.onset_min_data_in_leaf
+            or parameters.min_data_in_leaf,
+            "positive_weight": parameters.onset_positive_weight
+            or parameters.positive_weight,
+        }
+    )
+    lightgbm = _fit_horizon(
+        features,
+        labels,
+        eligible,
+        training_rows,
+        validation_rows,
+        specialist,
+        seed,
+        iterations,
+    )
+    catboost = None
+    if parameters.onset_catboost_weight > 0:
+        rows = np.flatnonzero(eligible & training_rows)
+        if len(rows) > parameters.max_training_rows:
+            rows = np.sort(
+                np.random.default_rng(seed).choice(
+                    rows, parameters.max_training_rows, replace=False
+                )
+            )
+        validation_indices = np.flatnonzero(eligible & validation_rows)
+        # Constant targets can occur on very short histories; LightGBM already
+        # supplies a valid constant prediction in that case.
+        if len(np.unique(labels[rows])) > 1:
+            catboost = CatBoostClassifier(
+                iterations=catboost_iterations,
+                depth=parameters.onset_catboost_depth,
+                learning_rate=parameters.learning_rate,
+                l2_leaf_reg=parameters.lambda_l2,
+                loss_function="Logloss",
+                class_weights=[1.0, specialist.positive_weight],
+                thread_count=parameters.threads,
+                random_seed=seed,
+                allow_writing_files=False,
+                verbose=False,
+            )
+            validation = (
+                (features.values[validation_indices], labels[validation_indices])
+                if len(validation_indices)
+                else None
+            )
+            catboost.fit(
+                features.values[rows],
+                labels[rows],
+                eval_set=validation,
+                early_stopping_rounds=parameters.early_stopping_rounds
+                if validation is not None
+                else None,
+            )
+    return OnsetModels(
+        lightgbm, catboost, parameters.onset_catboost_weight, parameters.threads
     )
 
 
@@ -480,14 +627,22 @@ def _fit_models(
     link_count = len(network.link_ids)
     training_rows = np.repeat(training_origins, link_count)
     validation_rows = np.repeat(validation_origins, link_count)
+    horizon_training = training_rows
+    horizon_validation = validation_rows
+    if parameters.ongoing_event_only:
+        # These classifiers are used only for established queues at inference.
+        horizon_training = np.repeat(training_origins & ongoing_windows, link_count)
+        horizon_validation = np.repeat(validation_origins & ongoing_windows, link_count)
+        if not horizon_training.any():
+            horizon_training = training_rows
     models: list[lgb.Booster] = []
     for horizon in range(QUEUE_FORECAST_STEPS):
         model = _fit_horizon(
             features,
             labels[:, :, horizon].ravel(),
             eligible[:, :, horizon].ravel(),
-            training_rows,
-            validation_rows,
+            horizon_training,
+            horizon_validation,
             parameters,
             seed + horizon,
             parameters.iterations,
@@ -496,16 +651,31 @@ def _fit_models(
     training_onset = training_origins & onset_windows
     validation_onset = validation_origins & onset_windows
     onset_model = None
+    onset_features = FeatureMatrix(
+        features.values[np.repeat(onset_windows, link_count)], features.names
+    )
+    onset_labels = labels[onset_windows, :, ONSET_HORIZON_INDEX].ravel()
+    onset_eligible = eligible[onset_windows, :, ONSET_HORIZON_INDEX].ravel()
+    augmented = None
+    if training_onset.any() and parameters.onset_history_dropout > 0:
+        augmented = history_features(
+            dropout_history(grid, parameters.onset_history_dropout, seed),
+            origins[onset_windows],
+            [grid.timestamps[index] for index in origins[onset_windows]],
+            network,
+        )
     if training_onset.any():
-        onset_model = _fit_horizon(
-            features,
-            labels[:, :, ONSET_HORIZON_INDEX].ravel(),
-            eligible[:, :, ONSET_HORIZON_INDEX].ravel(),
-            np.repeat(training_onset, link_count),
-            np.repeat(validation_onset, link_count),
+        onset_model = _fit_onset(
+            onset_features,
+            augmented,
+            onset_labels,
+            onset_eligible,
+            np.repeat(training_onset[onset_windows], link_count),
+            np.repeat(validation_onset[onset_windows], link_count),
             parameters,
             seed + QUEUE_FORECAST_STEPS,
-            parameters.iterations,
+            parameters.onset_iterations or parameters.iterations,
+            parameters.onset_iterations or parameters.iterations,
         )
     thresholds = QueueThresholds(FALLBACK_QUEUE_THRESHOLD, FALLBACK_QUEUE_THRESHOLD)
     if validation_origins.any() and calibration_windows[validation_origins].any():
@@ -534,7 +704,11 @@ def _fit_models(
             calibration_windows[validation_origins],
         )
         # Final models use the full historical interval and the selected tree counts.
-        all_rows = np.ones(len(features.values), dtype=bool)
+        all_rows = (
+            np.repeat(ongoing_windows, link_count)
+            if parameters.ongoing_event_only and ongoing_windows.any()
+            else np.ones(len(features.values), dtype=bool)
+        )
         no_validation = np.zeros(len(features.values), dtype=bool)
         models = [
             _fit_horizon(
@@ -550,15 +724,25 @@ def _fit_models(
             for horizon, model in enumerate(models)
         ]
         if onset_model is not None:
-            onset_model = _fit_horizon(
-                features,
-                labels[:, :, ONSET_HORIZON_INDEX].ravel(),
-                eligible[:, :, ONSET_HORIZON_INDEX].ravel(),
-                np.repeat(onset_windows, link_count),
-                no_validation,
+            onset_model = _fit_onset(
+                onset_features,
+                augmented,
+                onset_labels,
+                onset_eligible,
+                np.ones(len(onset_labels), dtype=bool),
+                np.zeros(len(onset_labels), dtype=bool),
                 parameters,
                 seed + QUEUE_FORECAST_STEPS,
-                onset_model.best_iteration or parameters.iterations,
+                onset_model.lightgbm.best_iteration
+                or parameters.onset_iterations
+                or parameters.iterations,
+                (
+                    onset_model.catboost.tree_count_
+                    or parameters.onset_iterations
+                    or parameters.iterations
+                )
+                if onset_model.catboost is not None
+                else 0,
             )
     onset = parameters.onset_threshold or parameters.threshold or thresholds.queue_onset
     ongoing_threshold = (
@@ -609,9 +793,9 @@ def _predict_panel(
         logger.warning(
             "No usable queue training labels for %s; using persistence", panel
         )
-        return baseline.queue(release_slice, {panel: dict(target_templates_by_split)})[
-            panel
-        ]
+        return baseline.queue(
+            release_slice, {panel: dict(target_templates_by_split)}, {}
+        )[panel]
     predictions: dict[Split, table_types.QueueFrame] = {}
     link_positions = {link_id: index for index, link_id in enumerate(network.link_ids)}
     threshold_by_condition: dict[QueueCondition, float] = {

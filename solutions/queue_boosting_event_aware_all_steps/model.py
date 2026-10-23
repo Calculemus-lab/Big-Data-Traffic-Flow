@@ -605,9 +605,9 @@ def _predict_panel(
         logger.warning(
             "No usable queue training labels for %s; using persistence", panel
         )
-        return baseline.queue(release_slice, {panel: dict(target_templates_by_split)})[
-            panel
-        ]
+        return baseline.queue(
+            release_slice, {panel: dict(target_templates_by_split)}, {}
+        )[panel]
     predictions: dict[Split, table_types.QueueFrame] = {}
     link_positions = {link_id: index for index, link_id in enumerate(network.link_ids)}
     threshold_by_condition: dict[QueueCondition, float] = {

@@ -1,0 +1,46 @@
+{
+  "december": {
+    "benchmark_id": "2dae8f4f1138c43943384fd026078928d6e8e55a37f5dd3c6c6901afbab13f7b",
+    "warnings": [],
+    "cases": [
+      {
+        "panel": "D12_I5_N",
+        "windows_by_condition": {
+          "queue_ongoing": 10,
+          "queue_onset": 10
+        },
+        "onset_first_queue_at_30_minutes": 10
+      },
+      {
+        "panel": "D7_I10_E",
+        "windows_by_condition": {
+          "queue_ongoing": 10,
+          "queue_onset": 10
+        },
+        "onset_first_queue_at_30_minutes": 10
+      }
+    ]
+  },
+  "january": {
+    "benchmark_id": "96dbd767b5a4e0a336563f1dc6c0dc446c05782869e63768bf1e12a0b677bc61",
+    "warnings": [],
+    "cases": [
+      {
+        "panel": "D12_I5_N",
+        "windows_by_condition": {
+          "queue_ongoing": 10,
+          "queue_onset": 10
+        },
+        "onset_first_queue_at_30_minutes": 10
+      },
+      {
+        "panel": "D7_I10_E",
+        "windows_by_condition": {
+          "queue_ongoing": 10,
+          "queue_onset": 10
+        },
+        "onset_first_queue_at_30_minutes": 10
+      }
+    ]
+  }
+}

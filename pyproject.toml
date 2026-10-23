@@ -17,6 +17,7 @@ dependencies = [
     "polars>=1.37,<2",
     "tzdata>=2026.5",
     "lightgbm>=4.6,<5",
+    "catboost>=1.2.8,<2",
 ]
 
 [dependency-groups]
@@ -27,6 +28,7 @@ dev = [
     "scipy-stubs>=1.18,<1.19",
     "ruff>=0.16.10",
     "matplotlib>=3.11.2",
+    "optuna>=4.5,<6",
 ]
 
 [project.scripts]

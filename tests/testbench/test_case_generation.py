@@ -10,9 +10,11 @@ import polars as pl
 from trafficbench import table_types
 from trafficbench.contracts import (
     KEYS,
+    QueueConfig,
 )
+from trafficbench.data import Release
 from trafficbench.fixture import make_fixture
-from trafficbench.prepare import prepare
+from trafficbench.prepare import build_queue_proxy_windows, prepare
 from trafficbench.runner import (
     verify_benchmark,
 )
@@ -151,3 +153,87 @@ def test_task4_synthetic_cases_are_repeatable(tmp_path: Path) -> None:
         assert pl.read_parquet(first_directory / "truth.parquet").equals(
             pl.read_parquet(second_directory / "truth.parquet")
         )
+
+
+def test_selector_matched_onsets_exclude_earlier_future_queues(
+    prepared_benchmark_directory: Path,
+) -> None:
+    """Keep the earliest onset horizon without changing ongoing eligibility."""
+    network = Release(
+        prepared_benchmark_directory.parent / "release"
+    ).scan_network_tables("D12_I5_N")
+    start = datetime(2030, 11, 20, tzinfo=UTC)
+    timestamps = [start + timedelta(minutes=5 * step) for step in range(60)]
+    links = network.links.select("link_id", "free_speed_kmh").collect()
+    # One sustained queue gives six possible forecast onsets but only one
+    # origin whose first queued target is exactly thirty minutes ahead.
+    states = (
+        pl.DataFrame({"timestamp": timestamps})
+        .join(links, how="cross")
+        .with_columns(
+            pl.when(
+                pl.col("timestamp").is_between(timestamps[30], timestamps[35])
+                & pl.col("link_id").eq(links["link_id"][0])
+            )
+            .then(pl.col("free_speed_kmh") * 0.4)
+            .otherwise(pl.col("free_speed_kmh"))
+            .alias("speed_kmh"),
+            pl.lit(1000.0).alias("flow_vph"),
+            pl.lit(0.1).alias("occupancy"),
+            pl.lit(100).alias("pct_observed"),
+            pl.lit(1).alias("is_score_eligible"),
+        )
+    )
+    settings = QueueConfig(
+        windows_per_condition=100,
+        minimum_spacing_minutes=0,
+        minimum_history_coverage=1.0,
+        minimum_future_coverage=1.0,
+        excluded_panels=[],
+    )
+    arbitrary = build_queue_proxy_windows(
+        states,
+        "D12_I5_N",
+        "I5",
+        "test",
+        network,
+        settings,
+        31,
+        start.date(),
+        start.date(),
+        date(2030, 11, 21),
+    )
+    matched = build_queue_proxy_windows(
+        states,
+        "D12_I5_N",
+        "I5",
+        "test",
+        network,
+        settings.model_copy(update={"onset_at_final_horizon": True}),
+        31,
+        start.date(),
+        start.date(),
+        date(2030, 11, 21),
+    )
+    onsets = [window for window in matched if window.info.condition == "queue_onset"]
+    assert len(onsets) == 1
+    assert onsets[0].info.forecast_origin_utc == timestamps[24]
+    assert any(
+        window.info.condition == "queue_onset"
+        and not window.answer.filter(
+            pl.col("queue_true").eq(1)
+            & pl.col("timestamp").lt(
+                window.info.forecast_origin_utc + timedelta(minutes=30)
+            )
+        ).is_empty()
+        for window in arbitrary
+    )
+    assert {
+        window.info.forecast_origin_utc
+        for window in matched
+        if window.info.condition == "queue_ongoing"
+    } == {
+        window.info.forecast_origin_utc
+        for window in arbitrary
+        if window.info.condition == "queue_ongoing"
+    }

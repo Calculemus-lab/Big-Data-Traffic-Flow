@@ -95,6 +95,8 @@ class QueueConfig(StrictRecord):
         minimum_history_coverage: Required fraction of usable history records.
         minimum_future_coverage: Required fraction of usable forecast records.
         excluded_panels: Panels omitted from local queue case generation.
+        onset_at_final_horizon: Require onset queues to first appear at T+30,
+            matching the released event selector instead of arbitrary onset timing.
     """
 
     windows_per_condition: int
@@ -102,6 +104,10 @@ class QueueConfig(StrictRecord):
     minimum_history_coverage: float
     minimum_future_coverage: float
     excluded_panels: list[Panel]
+    # Omit inactive sampling options so existing benchmark identities stay stable.
+    onset_at_final_horizon: bool = Field(
+        default=False, exclude_if=lambda value: not value
+    )
 
 
 class OdmeConfig(StrictRecord):

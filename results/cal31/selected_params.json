@@ -1,0 +1,18 @@
+{
+  "iterations": 250,
+  "learning_rate": 0.05,
+  "num_leaves": 63,
+  "min_data_in_leaf": 30,
+  "positive_weight": 4.0,
+  "feature_fraction": 0.75,
+  "lambda_l2": 1.0,
+  "training_stride": 3,
+  "max_training_rows": 250000,
+  "max_training_origins": 3000,
+  "calibration_days": 7,
+  "early_stopping_rounds": 30,
+  "threads": 4,
+  "threshold": null,
+  "onset_threshold": null,
+  "ongoing_threshold": null
+}

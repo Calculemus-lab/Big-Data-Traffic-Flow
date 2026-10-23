@@ -14,6 +14,7 @@ from scipy import sparse
 
 from solutions.queue_boosting_event_aware.features import (
     HISTORY_STEPS,
+    FeatureMatrix,
     QueueNetwork,
     TrafficGrid,
     history_features,
@@ -22,9 +23,11 @@ from solutions.queue_boosting_event_aware.features import (
 )
 from solutions.queue_boosting_event_aware.model import (
     QueueParameters,
+    _fit_onset,
     _onset_candidate_origins,
     calibration_thresholds,
     decode_queue_window,
+    dropout_history,
     historical_grid,
     select_training_origins,
 )
@@ -281,3 +284,74 @@ def test_queue_boosting_predicts_all_targets_reproducibly(
         )
         assert prediction.equals(repeated)
         assert set(prediction["queue_pred"]) <= {0, 1}
+
+
+def test_history_dropout_preserves_original_inputs_and_shared_missingness() -> None:
+    """Remove all channels at the same cells without modifying the source grid."""
+    values = np.ones((40, 3), dtype=np.float32)
+    times = tuple(
+        datetime(2030, 11, 3, tzinfo=UTC) + timedelta(minutes=5 * i) for i in range(40)
+    )
+    grid = TrafficGrid(times, values, values, values, values, values)
+    augmented = dropout_history(grid, 0.5, 31)
+    assert np.isnan(augmented.speed_ratio).any()
+    assert np.isfinite(augmented.speed_ratio).any()
+    for original, changed in zip(grid[1:], augmented[1:], strict=True):
+        np.testing.assert_array_equal(original, values)
+        np.testing.assert_array_equal(
+            np.isnan(changed), np.isnan(augmented.speed_ratio)
+        )
+    np.testing.assert_array_equal(
+        augmented.speed_ratio, dropout_history(grid, 0.5, 31).speed_ratio
+    )
+
+
+def test_augmented_onset_blend_excludes_nontraining_labels() -> None:
+    """Copies of excluded origins must remain excluded from both classifiers."""
+    random = np.random.default_rng(31)
+    values = np.column_stack(
+        [random.random(80), np.tile([0, 1], 40), np.zeros(80)]
+    ).astype(np.float32)
+    features = FeatureMatrix(values, ("speed", "link_index", "day_of_week"))
+    labels = values[:, 0] < 0.5
+    training = np.arange(80) < 40
+    parameters = QueueParameters(
+        iterations=5,
+        min_data_in_leaf=2,
+        threads=1,
+        onset_catboost_weight=0.5,
+        onset_catboost_depth=3,
+    )
+    eligible = np.ones(80, dtype=bool)
+    no_validation = np.zeros(80, dtype=bool)
+    first = _fit_onset(
+        features,
+        features,
+        labels,
+        eligible,
+        training,
+        no_validation,
+        parameters,
+        31,
+        5,
+        5,
+    )
+    changed = labels.copy()
+    changed[~training] = ~changed[~training]
+    repeated = _fit_onset(
+        features,
+        features,
+        changed,
+        eligible,
+        training,
+        no_validation,
+        parameters,
+        31,
+        5,
+        5,
+    )
+    assert first.catboost is not None
+    probability = first.predict(values)
+    assert probability.shape == (80,)
+    assert np.all((probability >= 0) & (probability <= 1))
+    np.testing.assert_allclose(probability, repeated.predict(values))
